@@ -121,13 +121,11 @@ class SmartBulbNode(SmartDeviceNode):
     def newdev(self):
         return SmartBulb(self.host)
 
-    def cmd_set_on(self,command):
-        asyncio.run(self.dev.turn_on())
-        super().cmd_set_on(command)
+    def cmd_set_on(self, command):
+        self.set_on()
 
-    def cmd_set_off(self,command):
-        asyncio.run(self.dev.turn_off())
-        super().cmd_set_off(command)
+    def cmd_set_off(self, command):
+        self.set_off()
 
     def cmd_set_bri(self,command):
         val = int(command.get('value'))

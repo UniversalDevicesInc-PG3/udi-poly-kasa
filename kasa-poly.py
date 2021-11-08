@@ -4,6 +4,7 @@ This is a TP-Link Kasa NodeServer for Polyglot v2 written in Python3
 by JimBo jimboca3@gmail.com
 """
 
+import asyncio
 import sys
 import polyinterface
 import time
@@ -12,7 +13,7 @@ from nodes import Controller
 
 LOGGER = polyinterface.LOGGER
 
-if __name__ == "__main__":
+def main():
     # Some are getting unclosed socket warnings due to garbage collection?? no idea why, so just ignore them since we dont' care
     warnings.filterwarnings("ignore", category=ResourceWarning, message="unclosed.*<socket.socket.*>")
     if sys.version_info < (3, 6):
@@ -43,3 +44,6 @@ if __name__ == "__main__":
         """
         Catch SIGTERM or Control-C and exit cleanly.
         """
+
+if __name__ == "__main__":
+    main()

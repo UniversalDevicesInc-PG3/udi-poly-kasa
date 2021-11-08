@@ -27,11 +27,15 @@ ST-ST-NAME = Status
 ST-GV0-NAME = Connected
 
 # Smart Strip
-ND-SmartStrip-NAME = Smart Strip
-ND-SmartStrip-ICON = GenericCtl
+ND-SmartStrip_N-NAME = Smart Strip
+ND-SmartStrip_N-ICON = GenericCtl
+ND-SmartStrip_E-NAME = Smart Strip Energy
+ND-SmartStrip_E-ICON = GenericCtl
 
-ND-SmartStripPlug-NAME = Smart Strip Plug
-ND-SmartStripPlug-ICON = GenericCtl
+ND-SmartStripPlug_N-NAME = Smart Strip Plug
+ND-SmartStripPlug_N-ICON = GenericCtl
+ND-SmartStripPlug_E-NAME = Smart Strip Plug Energy
+ND-SmartStripPlug_E-ICON = GenericCtl
 
 # SmartPlugs
 ND-SmartPlug_NN-NAME = SmartPlug

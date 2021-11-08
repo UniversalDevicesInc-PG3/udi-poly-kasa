@@ -23,7 +23,7 @@
         </cmds>
     </nodeDef>
 
-    <nodeDef id="SmartStrip" nls="ss">
+    <nodeDef id="SmartStrip_N" nls="ss">
         <editors />
         <sts>
             <st id="ST" editor="onoff" />
@@ -38,10 +38,47 @@
         </cmds>
     </nodeDef>
 
-    <nodeDef id="SmartStripPlug" nls="ssp">
+    <nodeDef id="SmartStrip_E" nls="ss">
         <editors />
         <sts>
             <st id="ST" editor="onoff" />
+            <st id="GV0" editor="bool" />
+            <st id="CC" editor="raw" />      <!-- Driver=Current Current = energy['current'] -->
+            <st id="CV" editor="raw" />      <!-- Driver=Current Voltage = energy['voltage'] -->
+            <st id="CPW" editor="watts" />   <!-- Driver=Current Power Used = energy['power'] -->
+            <st id="TPW" editor="watts" />   <!-- Driver=Total Power Used = energy['total'] -->
+        </sts>
+        <cmds>
+            <sends />
+            <accepts>
+                <cmd id="DON" />
+                <cmd id="DOF" />
+            </accepts>
+        </cmds>
+    </nodeDef>
+
+    <nodeDef id="SmartStripPlug_N" nls="ssp">
+        <editors />
+        <sts>
+            <st id="ST" editor="onoff" />
+        </sts>
+        <cmds>
+            <sends />
+            <accepts>
+                <cmd id="DON" />
+                <cmd id="DOF" />
+            </accepts>
+        </cmds>
+    </nodeDef>
+
+    <nodeDef id="SmartStripPlug_E" nls="ssp">
+        <editors />
+        <sts>
+            <st id="ST" editor="onoff" />
+            <st id="CC" editor="raw" />      <!-- Driver=Current Current = energy['current'] -->
+            <st id="CV" editor="raw" />      <!-- Driver=Current Voltage = energy['voltage'] -->
+            <st id="CPW" editor="watts" />   <!-- Driver=Current Power Used = energy['power'] -->
+            <st id="TPW" editor="watts" />   <!-- Driver=Total Power Used = energy['total'] -->
         </sts>
         <cmds>
             <sends />

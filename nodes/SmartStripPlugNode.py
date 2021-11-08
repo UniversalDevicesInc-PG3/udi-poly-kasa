@@ -1,77 +1,52 @@
-
+#
+# TP Link Kasa Smart StripPlug Node
+#
+# This code is used for StripPlugs
+#
 import polyinterface
-import asyncio
+from kasa import SmartStrip,SmartDeviceException
+from nodes import SmartDeviceNode
 
 LOGGER = polyinterface.LOGGER
 
+class SmartStripPlugNode(SmartDeviceNode):
 
-class SmartStripPlugNode(polyinterface.Node):
-
-    def __init__(self, controller, parent, address, name, dev):
-        self.name = name
-        self.dev = dev
+    def __init__(self, controller, parent, address, name, cfg={}, dev=None):
+        # All StripPlugs have these.
         self.debug_level = 0
-        self.pobj = parent # super changes self.parent
-        # The strip is the parent since the plugs are it's children
-        super(SmartStripPlugNode, self).__init__(self, parent.address, address, name)
-        self.controller = controller
+        self.name = name
+        # All devices have these.
+        self.drivers = [
+            {'driver': 'ST', 'value': 0, 'uom': 78},
+            {'driver': 'GV0', 'value': 0, 'uom': 2}, #connection state
+        ]
+        if dev is not None:
+            # Figure out the id based in the device info
+            self.id = 'SmartStripPlug_'
+            if dev.has_emeter:
+                self.id += 'E'
+            else:
+                self.id += 'N'
+        super().__init__(controller, parent.address, address, name, dev, cfg)
+        self.poll = False
+
+    async def connect_a(self):
+        # TODO: COnfirm parent is connected?
+        pass
 
     def start(self):
-        #self.setDriver('ST', 100)
-        self.query()
+        LOGGER.debug(f'enter: {self.dev}')
+        super().start()
+        LOGGER.debug(f'exit: {self.dev}')
 
-    def shortPoll(self):
-        self.check_st()
+    def cmd_set_on(self,command):
+        super().cmd_set_on(command)
 
-    def set_on(self):
-        self.setDriver('ST', 100)
+    def cmd_set_off(self,command):
+        super().cmd_set_off(command)
 
-    def set_off(self):
-        self.setDriver('ST', 0)
-
-    def check_st(self):
-        LOGGER.debug(f'{self.dev.alias}:check_st: is_on={self.dev.is_on}')
-        if self.dev.is_on is True:
-            self.setDriver('ST', 100)
-        else:
-            self.setDriver('ST', 0)
-
-    def is_connected(self):
-        return True
-
-    def query(self):
-        self.check_st()
-        self.reportDrivers()
-
-    def update(self):
-        self.pobj.update()
-
-    def cmd_set_on(self, command):
-        LOGGER.debug(f'{self.dev.alias}:cmd_set_on: is_on={self.dev.is_on}')
-        self.set_on()
-        asyncio.run(self.dev.turn_on())
-
-    def cmd_set_off(self, command):
-        LOGGER.debug(f'{self.dev.alias}:cmd_set_off: is_on={self.dev.is_on}')
-        self.set_off()
-        asyncio.run(self.dev.turn_off())
-
-    def l_info(self, name, string):
-        LOGGER.info("%s:%s:%s: %s" %  (self.id,self.name,name,string))
-
-    def l_error(self, name, string, exc_info=False):
-        LOGGER.error("%s:%s:%s: %s" % (self.id,self.name,name,string), exc_info=exc_info)
-
-    def l_warning(self, name, string):
-        LOGGER.warning("%s:%s:%s: %s" % (self.id,self.name,name,string))
-
-    def l_debug(self, name, string, level=0, exc_info=False):
-        if level <= self.debug_level:
-            LOGGER.debug("%s:%s:%s: %s" % (self.id,self.name,name,string), exc_info=exc_info)
-
-    drivers = [{'driver': 'ST', 'value': 0, 'uom': 78}]
-    id = 'SmartStripPlug'
     commands = {
         'DON': cmd_set_on,
-        'DOF': cmd_set_off
+        'DOF': cmd_set_off,
     }
+

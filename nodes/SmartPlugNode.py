@@ -12,7 +12,7 @@ LOGGER = polyinterface.LOGGER
 
 class SmartPlugNode(SmartDeviceNode):
 
-    def __init__(self, controller, address, name, cfg=None, dev=None):
+    def __init__(self, controller, parent, address, name, cfg={}, dev=None):
         # All plugs have these.
         self.debug_level = 0
         self.name = name
@@ -32,21 +32,12 @@ class SmartPlugNode(SmartDeviceNode):
                 self.id += 'E'
             else:
                 self.id += 'N'
-            cfg['emeter'] = dev.has_emeter
-        if cfg['emeter']:
-            self.drivers.append({'driver': 'CC', 'value': 0, 'uom': 56})
-            self.drivers.append({'driver': 'CV', 'value': 0, 'uom': 56})
-            self.drivers.append({'driver': 'CPW', 'value': 0, 'uom': 73})
-            self.drivers.append({'driver': 'TPW', 'value': 0, 'uom': 73})
-        super().__init__(controller, controller.address, address, name, dev, cfg)
+        super().__init__(controller, parent.address, address, name, dev, cfg)
 
     def start(self):
+        LOGGER.debug(f'enter: {self.dev}')
         super().start()
-        self.set_energy()
-
-    def longPoll(self):
-        super().longPoll()
-        self.set_energy()
+        LOGGER.debug(f'exit: {self.dev}')
 
     def newdev(self):
         return SmartPlug(self.host)

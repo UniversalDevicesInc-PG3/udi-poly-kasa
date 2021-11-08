@@ -17,6 +17,7 @@ class SmartDeviceNode(polyinterface.Node):
         self.name = name
         self.dev  = dev
         self.cfg  = cfg
+        self.poll = True
         self.pfx = f"{self.name}:"
         LOGGER.debug(f'{self.pfx} dev={dev}')
         LOGGER.debug(f'{self.pfx} cfg={cfg}')
@@ -26,7 +27,7 @@ class SmartDeviceNode(polyinterface.Node):
         self.st = None
         self.event  = None
         self.connected = None # So start will force setting proper status
-        LOGGER.debug(f'{self.pfx} controller={controller} address={address} name={name} host={self.host}')
+        LOGGER.debug(f'{self.pfx} controller={controller} address={address} name={name} host={self.host} id={self.id}')
         if not self.dev is None and self.dev.has_emeter:
             self.drivers.append({'driver': 'CC', 'value': 0, 'uom': 1}) #amps
             self.drivers.append({'driver': 'CV', 'value': 0, 'uom': 72}) #volts
@@ -36,35 +37,53 @@ class SmartDeviceNode(polyinterface.Node):
         super().__init__(controller, parent_address, address, name)
 
     def start(self):
-        self.connect()
+        LOGGER.debug(f'enter: {self.name} dev={self.dev}')
+        fut = asyncio.run_coroutine_threadsafe(self.connect_and_update_a(), self.controller.mainloop)
+        res = fut.result()
+        LOGGER.debug(f'result:{res} {self.name} dev={self.dev}')
         self.ready = True
+        LOGGER.debug(f'exit: {self.name} dev={self.dev}')
 
     def query(self):
-        self.set_state()
-        self.set_energy()
+        fut = asyncio.run_coroutine_threadsafe(self._query_a(), self.controller.mainloop)
+        return fut.result()
+
+    async def _query_a(self):
+        await self.set_state_a(set_energy=True)
         self.reportDrivers()
 
-    def shortPoll(self):
+    async def shortPoll(self):
+        LOGGER.debug(f'enter: {self.name}')
         if not self.ready:
             return
         # Keep trying to connect if possible
-        self.connect()
-        self.set_state()
+        if await self.connect_a():
+            await self.set_state_a()
+        LOGGER.debug(f'exit: {self.name}')
 
-    def longPoll(self):
+    async def longPoll(self):
         if not self.connected:
             LOGGER.info(f'{self.pfx} Not connected, will retry...')
-            self.connect()
+            await self.connect_a()
         if self.connected:
-            self.set_energy()
+            await self._set_energy_a()
+
+    async def connect_and_update_a(self):
+        await self.connect_a()
+        await self.set_state_a()
 
     def connect(self):
+        fut = asyncio.run_coroutine_threadsafe(self.connect_a(), self.controller.mainloop)
+        return fut.result()
+
+    async def connect_a(self):
+        LOGGER.debug(f'enter: {self.name} dev={self.dev}')
         if not self.is_connected():
             LOGGER.debug(f'{self.pfx} connected={self.is_connected()}')
             try:
                 self.dev = self.newdev()
                 # We can get a dev, but not really connected, so make sure we are connected.
-                self.update()
+                await self._update_a()
                 sys_info = self.dev.sys_info
                 self.set_connected(True)
             except SmartDeviceException as ex:
@@ -73,29 +92,51 @@ class SmartDeviceNode(polyinterface.Node):
             except:
                 LOGGER.error(f"{self.pfx} Unknown excption connecting to device '{self.name}' {self.host} will try again later", exc_info=True)
                 self.set_connected(False)
+        LOGGER.debug(f'exit:{self.connected} {self.name} dev={self.dev}')
         return self.is_connected
 
-    def update(self):
-        asyncio.run(self.dev.update())
-
     def set_on(self):
-        asyncio.run(self.dev.turn_on())
-        self.set_state()
-        self.set_energy()
+        LOGGER.debug(f'{self.pfx} enter')
+        fut = asyncio.run_coroutine_threadsafe(self.set_on_a(), self.controller.mainloop)
+        res = fut.result()
+        LOGGER.debug(f'exit result={res}')
+
+    async def set_on_a(self):
+        LOGGER.debug(f'{self.pfx} enter')
+        await self.dev.turn_on()
+        await self.set_state_a(set_energy=True)
+        LOGGER.debug(f'{self.pfx} exit')
 
     def set_off(self):
-        asyncio.run(self.dev.turn_off())
-        self.set_state()
-        self.set_energy()
+        LOGGER.debug(f'{self.pfx} enter')
+        fut = asyncio.run_coroutine_threadsafe(self.set_off_a(), self.controller.mainloop)
+        res = fut.result()
+        LOGGER.debug(f'result={res}')
+        LOGGER.debug(f'{self.pfx} exit')
+
+    async def set_off_a(self):
+        LOGGER.debug(f'{self.pfx} enter')
+        await self.dev.turn_off()
+        await self.set_state_a(set_energy=True)
+        LOGGER.debug(f'{self.pfx} exit')
 
     def update(self):
+        LOGGER.debug(f'enter: {self.name} dev={self.dev}')
+        #self.controller.mainloop.run_until_complete(self._update_a())
+        fut = asyncio.run_coroutine_threadsafe(self._update_a(), self.controller.mainloop)
+        res = fut.result()
+        LOGGER.debug(f'exit:{res} {self.name} dev={self.dev}')
+
+    async def _update_a(self):
+        LOGGER.debug(f'enter: {self.name} dev={self.dev}')
         if self.dev is None:
             if self.connected:
                 LOGGER.debug(f"{self.pfx} No device")
                 self.set_connected(False)
             return False
         try:
-            asyncio.run(self.dev.update())
+            await self.dev.update()
+            LOGGER.debug(f'exit:True {self.name} dev={self.dev}')
             return True
         except SmartDeviceException as ex:
             if self.connected:
@@ -104,14 +145,15 @@ class SmartDeviceNode(polyinterface.Node):
             if self.connected:
                 LOGGER.error(f'{self.pfx} failed', exc_info=True)
         self.set_connected(False)
+        LOGGER.debug(f'exit:False {self.name} dev={self.dev}')
         return False
 
-    def set_state(self):
-        LOGGER.debug(f'start: dev={self.dev}')
+    async def set_state_a(self,set_energy=True):
+        LOGGER.debug(f'enter: dev={self.dev}')
         # This doesn't call set_energy, since that is only called on long_poll's
         # We don't use self.connected here because dev might be good, but device is unplugged
         # So then when it's plugged back in the same dev will still work
-        if self.update():
+        if await self._update_a():
             ocon = self.connected
             if self.dev.is_on is True:
                 if self.dev.is_dimmable:
@@ -125,7 +167,7 @@ class SmartDeviceNode(polyinterface.Node):
                 self.brightness = 0
                 self.setDriver('ST',0)
             if self.dev.is_color:
-                hsv = self.dev.hsv
+                hsv = self.hsv()
                 self.setDriver('GV3',hsv[0])
                 self.setDriver('GV4',st2bri(hsv[1]))
                 self.setDriver('GV5',st2bri(hsv[2]))
@@ -138,15 +180,24 @@ class SmartDeviceNode(polyinterface.Node):
                     self.set_all_drivers()
                 except Exception as ex:
                     LOGGER.error(f'{self.pfx} set_all_drivers failed: {ex}',exc_info=True)
-        LOGGER.debug(f'end:   dev={self.dev}')
+            if set_energy:
+                await self._set_energy_a()
+        LOGGER.debug(f'exit:  dev={self.dev}')
 
-    # Called by set_state when device is alive, does nothing by default
+    # Called by set_state when device is alive, does nothing by default, enheritance may override
     def set_all_drivers(self):
         pass
 
     def set_energy(self):
-        if not self.update():
-            return
+        fut = asyncio.run_coroutine_threadsafe(self._set_energy_au(), self.controller.mainloop)
+        res = fut.result()
+        LOGGER.debug(f'result={res}')
+
+    async def _set_energy_au(self):
+        if await self.update():
+            await self._set_energy_a()
+
+    async def _set_energy_a(self):
         if self.dev.has_emeter:
             try:
                 energy = self.dev.emeter_realtime
@@ -154,28 +205,10 @@ class SmartDeviceNode(polyinterface.Node):
                 if energy is not None:
                     # rounding the values reduces driver updating traffic for
                     # insignificant changes
-                    if 'current' in energy:
-                        self.setDriver('CC',round(energy['current'],3))
-                    if 'current_ma' in energy:
-                        self.setDriver('CC',round(energy['current_ma']/1000,3))
-
-                    if 'voltage' in energy:
-                        self.setDriver('CV',round(energy['voltage'],1))
-                    if 'voltage_mv' in energy:
-                        self.setDriver('CV',round(energy['voltage_mv']*1000,1))
-
-                    if 'power' in energy:
-                        self.setDriver('CPW',round(energy['power'],3))
-                    elif 'power_mw' in energy:
-                        val = energy['power_mw']
-                        LOGGER.debug(f"{val}")
-                        self.setDriver('CPW',round(energy['power_mw']/1000,3))
-
-                    if 'total' in energy:
-                        self.setDriver('TPW',round(energy['total'],3))
-                    if 'total_wh' in energy:
-                        self.setDriver('TPW',round(energy['total_wh'],3))
-
+                    self.setDriver('CC',round(energy.current,3))
+                    self.setDriver('CV',round(energy.voltage,3))
+                    self.setDriver('CPW',round(energy.power,3))
+                    self.setDriver('TPW',round(energy.total,3))
             except SmartDeviceException as ex:
                 LOGGER.error(f'{self.pfx} failed: {ex}')
             except:
