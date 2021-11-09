@@ -46,10 +46,6 @@ class SmartDimmerNode(SmartDeviceNode):
         super().start()
         self.set_energy()
 
-    def longPoll(self):
-        super().longPoll()
-        self.set_energy()
-
     def set_bri(self,val):
         LOGGER.debug(f'{self.pfx} connected={self.connected} val={val}')
         if self.is_connected():
