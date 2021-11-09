@@ -175,7 +175,7 @@ class SmartDeviceNode(polyinterface.Node):
                 self.brightness = 0
                 self.setDriver('ST',0)
             if self.dev.is_color:
-                hsv = self.hsv()
+                hsv = self.dev.hsv
                 self.setDriver('GV3',hsv[0])
                 self.setDriver('GV4',st2bri(hsv[1]))
                 self.setDriver('GV5',st2bri(hsv[2]))

@@ -45,6 +45,9 @@ class SmartStripPlugNode(SmartDeviceNode):
     def cmd_set_off(self,command):
         super().cmd_set_off(command)
 
+    def is_connected(self):
+        return self.parent.is_connected()
+        
     commands = {
         'DON': cmd_set_on,
         'DOF': cmd_set_off,

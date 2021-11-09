@@ -217,8 +217,8 @@ class Controller(polyinterface.Controller):
                 LOGGER.info(f"Connected:{node.is_connected()} '{node.name}'")
                 if not node.is_connected():
                     # Previously connected node
-                    LOGGER.warning("Connected:{node.is_connected()} '{node.name}' host is {node.host} same as {dev.host}")
-                    node.connect()
+                    LOGGER.warning(f"Connected:{node.is_connected()} '{node.name}' host is {node.host} same as {dev.host}")
+                    await node.connect_a()
         else:
             LOGGER.info(f'found new device {dev.alias}')
             self.add_node(dev=dev)
