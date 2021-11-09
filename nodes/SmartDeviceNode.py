@@ -6,7 +6,7 @@
 import re,asyncio
 import polyinterface
 from kasa import SmartDeviceException
-from converters import bri2st,st2bri
+from converters import myround,bri2st,st2bri
 
 LOGGER = polyinterface.LOGGER
 
@@ -45,8 +45,12 @@ class SmartDeviceNode(polyinterface.Node):
         LOGGER.debug(f'exit: {self.name} dev={self.dev}')
 
     def query(self):
-        fut = asyncio.run_coroutine_threadsafe(self._query_a(), self.controller.mainloop)
-        return fut.result()
+        LOGGER.info(f'{self.pfx} enter')
+        fut = asyncio.run_coroutine_threadsafe(self.update_and_set_state_a(), self.controller.mainloop)
+        res = fut.result()
+        LOGGER.info(f'{self.pfx} res={res}')
+        self.reportDrivers()
+        LOGGER.info(f'{self.pfx} exit')
 
     async def _query_a(self):
         await self.set_state_a(set_energy=True)
@@ -83,7 +87,7 @@ class SmartDeviceNode(polyinterface.Node):
             try:
                 self.dev = self.newdev()
                 # We can get a dev, but not really connected, so make sure we are connected.
-                await self._update_a()
+                await self.update_a()
                 sys_info = self.dev.sys_info
                 self.set_connected(True)
             except SmartDeviceException as ex:
@@ -122,12 +126,16 @@ class SmartDeviceNode(polyinterface.Node):
 
     def update(self):
         LOGGER.debug(f'enter: {self.name} dev={self.dev}')
-        #self.controller.mainloop.run_until_complete(self._update_a())
-        fut = asyncio.run_coroutine_threadsafe(self._update_a(), self.controller.mainloop)
+        #self.controller.mainloop.run_until_complete(self.update_a())
+        fut = asyncio.run_coroutine_threadsafe(self.update_a(), self.controller.mainloop)
         res = fut.result()
         LOGGER.debug(f'exit:{res} {self.name} dev={self.dev}')
 
-    async def _update_a(self):
+    async def update_and_set_state_a(self):
+        await self.update_a()
+        await self.set_state_a()
+
+    async def update_a(self):
         LOGGER.debug(f'enter: {self.name} dev={self.dev}')
         if self.dev is None:
             if self.connected:
@@ -153,7 +161,7 @@ class SmartDeviceNode(polyinterface.Node):
         # This doesn't call set_energy, since that is only called on long_poll's
         # We don't use self.connected here because dev might be good, but device is unplugged
         # So then when it's plugged back in the same dev will still work
-        if await self._update_a():
+        if await self.update_a():
             ocon = self.connected
             if self.dev.is_on is True:
                 if self.dev.is_dimmable:
@@ -205,10 +213,10 @@ class SmartDeviceNode(polyinterface.Node):
                 if energy is not None:
                     # rounding the values reduces driver updating traffic for
                     # insignificant changes
-                    self.setDriver('CC',round(energy.current,3))
-                    self.setDriver('CV',round(energy.voltage,3))
-                    self.setDriver('CPW',round(energy.power,3))
-                    self.setDriver('TPW',round(energy.total,3))
+                    self.setDriver('CC',myround(energy.current,3))
+                    self.setDriver('CV',myround(energy.voltage,3))
+                    self.setDriver('CPW',myround(energy.power,3))
+                    self.setDriver('TPW',myround(energy.total,3))
             except SmartDeviceException as ex:
                 LOGGER.error(f'{self.pfx} failed: {ex}')
             except:

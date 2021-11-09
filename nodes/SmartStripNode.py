@@ -42,7 +42,8 @@ class SmartStripNode(SmartDeviceNode):
         self.ready = True
         LOGGER.debug(f'{self.pfx} exit')
 
-    def query(self):
+    # TODO: Should this be the real query async and call super?
+    def xxquery(self):
         LOGGER.debug(f'{self.pfx} enter')
         self.check_st()
         LOGGER.debug(f'{self.pfx} nodes={self.nodes}')
@@ -51,6 +52,7 @@ class SmartStripNode(SmartDeviceNode):
         self.reportDrivers()
         LOGGER.debug(f'{self.pfx} exit')
 
+    # TODO: Should this be the real one now?  Need to test more
     async def xxxset_state_a(self,set_energy=True):
         LOGGER.debug(f'{self.pfx} enter')
         await super(SmartStripNode, self).set_state_a(set_energy=set_energy)

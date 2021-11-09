@@ -53,6 +53,7 @@ class Controller(polyinterface.Controller):
         self.discover()
         LOGGER.info(f'exit {self.name}')
 
+    # TODO: Test without having shortpoll/longpoll threads and turn a device on/off and see if it runs in middle or after all?
     def shortPoll(self):
         if not self.discover_done:
             LOGGER.info('waiting for discover to complete')
@@ -154,7 +155,7 @@ class Controller(polyinterface.Controller):
         self.reportDrivers()
         self.check_params()
         for node in self.nodes:
-            if self.nodes[node].address != self.address:
+            if self.nodes[node].poll:
                 self.nodes[node].query()
 
     def heartbeat(self):
@@ -286,8 +287,8 @@ class Controller(polyinterface.Controller):
         #    node = self.addNode(SmartDimmerNode(self, cfg['address'], cfg['name'], dev=dev, cfg=cfg))
         elif cfg['type'] == 'SmartBulb':
             node = self.addNode(SmartBulbNode(self, cfg['address'], cfg['name'], dev=dev, cfg=cfg))
-        #elif cfg['type'] == 'SmartLightStrip':
-        #    node = self.addNode(SmartLightStripNode(self, cfg['address'], cfg['name'], dev=dev, cfg=cfg))
+        elif cfg['type'] == 'SmartLightStrip':
+            node = self.addNode(SmartLightStripNode(self, cfg['address'], cfg['name'], dev=dev, cfg=cfg))
         else:
             LOGGER.error(f"Device type not yet supported: {cfg['type']}")
             return False

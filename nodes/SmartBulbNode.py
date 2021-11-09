@@ -8,6 +8,9 @@ from kasa import SmartBulb,SmartDeviceException
 from nodes import SmartDeviceNode
 from converters import color_hsv, color_rgb, bri2st, st2bri
 
+# TODO: Use min/max values to get correct NodeDef
+# SmartDeviceNode:set_state_a: exit:  dev=<DeviceType.Bulb model KL120(US) at 192.168.86.144 (Test KL120), is_on: True - dev specific: {'Brightness': 50, 'Is dimmable': True, 'Color temperature': 2700, 'Valid temperature range': ColorTempRange(min=2700, max=5000)}>
+
 LOGGER = polyinterface.LOGGER
 
 class SmartBulbNode(SmartDeviceNode):
@@ -59,10 +62,16 @@ class SmartBulbNode(SmartDeviceNode):
             self.brightness = int(val)
             LOGGER.debug(f'{val}')
             self.setDriver('GV5',self.brightness)
-            # This won't actually change unless the device is on
-            asyncio.run(self.dev.set_brightness(int(bri2st(self.brightness))))
-            asyncio.run(self.dev.update())
-            self.setDriver('ST',self.dev.brightness)
+            fut = asyncio.run_coroutine_threadsafe(self.set_bri_a(), self.controller.mainloop)
+            return fut.result()
+
+    async def set_bri_a(self):
+        # This won't actually change unless the device is on?
+        if not self.dev.is_on:
+            await self.dev.turn_on()
+        await self.dev.set_brightness(int(bri2st(self.brightness)))
+        await self.set_state_a() # TODO: Should we really set all states, or just call update?
+        self.setDriver('ST',self.dev.brightness)
 
     def brt(self):
         LOGGER.debug(f'{self.pfx} connected={self.connected}')
@@ -130,7 +139,6 @@ class SmartBulbNode(SmartDeviceNode):
     def cmd_set_bri(self,command):
         val = int(command.get('value'))
         LOGGER.info(f'{self.pfx} val={val}')
-        asyncio.run(self.dev.turn_on())
         self.set_bri(val)
 
     def cmd_set_sat(self,command):

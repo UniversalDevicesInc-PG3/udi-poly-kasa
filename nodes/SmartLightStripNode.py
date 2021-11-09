@@ -1,7 +1,7 @@
 #
-# TP Link Kasa Smart Bulb Node
+# TP Link Kasa Smart LightStrip Node
 #
-# This code is used for bulbs
+# This code is used for light strips
 #
 import polyinterface,asyncio
 from kasa import SmartLightStrip,SmartDeviceException
@@ -10,7 +10,7 @@ from nodes import SmartBulbNode
 LOGGER = polyinterface.LOGGER
 
 # LightSTrip is the same as bulb
-# TODO: Add lenght Driver for info?
+# TODO: Add length Driver for info?
 
 class SmartLightStripNode(SmartBulbNode):
 
