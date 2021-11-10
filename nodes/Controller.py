@@ -283,8 +283,8 @@ class Controller(polyinterface.Controller):
             node = self.addNode(SmartStripNode(self, cfg['address'], cfg['name'],  dev=dev, cfg=cfg))
         elif cfg['type'] == 'SmartStripPlug':
             node = self.addNode(SmartStripPlugNode(self, parent, cfg['address'], cfg['name'],  dev=dev, cfg=cfg))
-        #elif cfg['type'] == 'SmartDimmer':
-        #    node = self.addNode(SmartDimmerNode(self, cfg['address'], cfg['name'], dev=dev, cfg=cfg))
+        elif cfg['type'] == 'SmartDimmer':
+            node = self.addNode(SmartDimmerNode(self, cfg['address'], cfg['name'], dev=dev, cfg=cfg))
         elif cfg['type'] == 'SmartBulb':
             node = self.addNode(SmartBulbNode(self, cfg['address'], cfg['name'], dev=dev, cfg=cfg))
         elif cfg['type'] == 'SmartLightStrip':
