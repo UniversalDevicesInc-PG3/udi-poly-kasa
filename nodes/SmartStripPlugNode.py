@@ -3,15 +3,14 @@
 #
 # This code is used for StripPlugs
 #
-import polyinterface
+from udi_interface import Node,LOGGER
+import asyncio
 from kasa import SmartStrip,SmartDeviceException
 from nodes import SmartDeviceNode
 
-LOGGER = polyinterface.LOGGER
-
 class SmartStripPlugNode(SmartDeviceNode):
 
-    def __init__(self, controller, parent, address, name, cfg={}, dev=None):
+    def __init__(self, controller, primary, address, name, dev=None, cfg=None):
         # All StripPlugs have these.
         self.debug_level = 0
         self.name = name
@@ -27,7 +26,7 @@ class SmartStripPlugNode(SmartDeviceNode):
                 self.id += 'E'
             else:
                 self.id += 'N'
-        super().__init__(controller, parent.address, address, name, dev, cfg)
+        super().__init__(controller, primary, address, name, dev, cfg)
         self.poll = False
 
     async def connect_a(self):

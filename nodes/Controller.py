@@ -1,5 +1,5 @@
 
-import polyinterface
+from udi_interface import Node,LOGGER,Custom,LOG_HANDLER
 import logging,re,json,sys,asyncio
 from threading import Thread,Event
 from node_funcs import get_valid_node_name
@@ -12,17 +12,17 @@ from nodes import SmartPlugNode
 from nodes import SmartDimmerNode
 from nodes import SmartBulbNode
 from nodes import SmartLightStripNode
-LOGGER = polyinterface.LOGGER
+
 #logging.getLogger('pyHS100').setLevel(logging.DEBUG)
 
 # We need an event loop for python-kasa since we run in a
 # thread which doesn't have a loop
 mainloop = asyncio.get_event_loop()
 
-class Controller(polyinterface.Controller):
+class Controller(Node):
 
-    def __init__(self, polyglot):
-        super(Controller, self).__init__(polyglot)
+    def __init__(self, poly, primary, address, name):
+        super(Controller, self).__init__(poly, primary, address, name)
         self.name = 'Kasa Controller'
         self.address = 'tplkasactl'
         self.primary = self.address
@@ -37,21 +37,39 @@ class Controller(polyinterface.Controller):
         self.in_short_poll = False
         self.long_event    = False
         self.in_long_poll  = False
+        self.Notices         = Custom(poly, 'notices')
+        self.Data            = Custom(poly, 'customdata')
+        self.Parameters      = Custom(poly, 'customparams')
+        self.TypedParameters = Custom(poly, 'customtypedparams')
+        self.TypedData       = Custom(poly, 'customtypeddata')
+        poly.subscribe(poly.START,                  self.handler_start, address) 
+        poly.subscribe(poly.POLL,                   self.handler_poll)
+        #poly.subscribe(poly.CUSTOMPARAMS,           self.handler_custom_params)
+        #poly.subscribe(poly.LOGLEVEL,               self.handler_log_level)
+        #poly.subscribe(poly.CONFIGDONE,             self.handler_config_done)
+        poly.ready()
+        poly.addNode(self)
 
-    def start(self):
-        LOGGER.info(f'enter {self.name}')
+    def handler_start(self):
+        #serverdata = self.poly._get_server_data()
+        LOGGER.info(f"Started Kasa PG3 NodeServer {self.poly.serverdata['version']}")
+        self.Notices.clear()
         self.mainloop = mainloop
         asyncio.set_event_loop(mainloop)
         self.connect_thread = Thread(target=mainloop.run_forever)
         self.connect_thread.start()
         self.setDriver('ST', 1)
-        self.server_data = self.poly.get_server_data(check_profile=True)
-        LOGGER.info(f"{self.name} Version {self.server_data['version']}")
         self.set_debug_level(self.getDriver('GV1'))
         self.heartbeat()
         self.check_params()
         self.discover()
         LOGGER.info(f'exit {self.name}')
+
+    def handler_poll(self, polltype):
+        if polltype == 'longPoll':
+            self.longPoll()
+        elif polltype == 'shortPoll':
+            self.shortPoll()
 
     # TODO: Test without having shortpoll/longpoll threads and turn a device on/off and see if it runs in middle or after all?
     def shortPoll(self):
@@ -88,10 +106,11 @@ class Controller(polyinterface.Controller):
         
     async def _shortPoll_a(self):
         LOGGER.debug('enter')
-        for node in self.nodes:
-            LOGGER.debug(f'node.address={self.nodes[node].address} node.name={self.nodes[node].name} ')
-            if self.nodes[node].poll:
-                await self.nodes[node].shortPoll()
+        nodes = self.poly.getNodes()
+        for node in nodes:
+            LOGGER.debug(f'node.address={node.address} node.name={node.name} ')
+            if node.poll:
+                await node.shortPoll()
         self.in_short_poll = False
         LOGGER.debug('exit')
 
@@ -134,13 +153,14 @@ class Controller(polyinterface.Controller):
     async def _longPoll_a(self):
         LOGGER.debug('enter')
         all_connected = True
-        for node in self.nodes:
-            if self.nodes[node].poll:
+        nodes = self.poly.getNodes()
+        for node in nodes:
+            if node.poll:
                 try:
-                    if self.nodes[node].is_connected():
-                        await self.nodes[node].longPoll()
+                    if node.is_connected():
+                        await node.longPoll()
                     else:
-                        LOGGER.warning(f"Known device not responding {self.nodes[node].address} '{self.nodes[node].name}'")
+                        LOGGER.warning(f"Known device not responding {node.address} '{node.name}'")
                         all_connected = False
                 except:
                     pass # in case node doesn't have a longPoll method
@@ -154,9 +174,10 @@ class Controller(polyinterface.Controller):
         self.setDriver('ST', 1)
         self.reportDrivers()
         self.check_params()
-        for node in self.nodes:
-            if self.nodes[node].poll:
-                self.nodes[node].query()
+        nodes = self.poly.getNodes()
+        for node in nodes:
+            if node.poll:
+                node.query()
 
     def heartbeat(self):
         LOGGER.debug('hb={self.hb}')
@@ -278,17 +299,17 @@ class Controller(polyinterface.Controller):
         #
 #         LOGGER.error(f"alb:controller.py:{cfg['type']}")
         if cfg['type'] == 'SmartPlug':
-            node = self.addNode(SmartPlugNode(self, parent, cfg['address'], cfg['name'], dev=dev, cfg=cfg))
+            node = self.poly.addNode(SmartPlugNode(self, parent, cfg['address'], cfg['name'], dev=dev, cfg=cfg))
         elif cfg['type'] == 'SmartStrip':
-            node = self.addNode(SmartStripNode(self, cfg['address'], cfg['name'],  dev=dev, cfg=cfg))
+            node = self.poly.addNode(SmartStripNode(self, cfg['address'], cfg['name'],  dev=dev, cfg=cfg))
         elif cfg['type'] == 'SmartStripPlug':
-            node = self.addNode(SmartStripPlugNode(self, parent, cfg['address'], cfg['name'],  dev=dev, cfg=cfg))
+            node = self.poly.addNode(SmartStripPlugNode(self, parent, cfg['address'], cfg['name'],  dev=dev, cfg=cfg))
         elif cfg['type'] == 'SmartDimmer':
-            node = self.addNode(SmartDimmerNode(self, cfg['address'], cfg['name'], dev=dev, cfg=cfg))
+            node = self.poly.addNode(SmartDimmerNode(self, cfg['address'], cfg['name'], dev=dev, cfg=cfg))
         elif cfg['type'] == 'SmartBulb':
-            node = self.addNode(SmartBulbNode(self, cfg['address'], cfg['name'], dev=dev, cfg=cfg))
+            node = self.poly.addNode(SmartBulbNode(self, cfg['address'], cfg['name'], dev=dev, cfg=cfg))
         elif cfg['type'] == 'SmartLightStrip':
-            node = self.addNode(SmartLightStripNode(self, cfg['address'], cfg['name'], dev=dev, cfg=cfg))
+            node = self.poly.addNode(SmartLightStripNode(self, cfg['address'], cfg['name'], dev=dev, cfg=cfg))
         else:
             LOGGER.error(f"Device type not yet supported: {cfg['type']}")
             return False
@@ -351,7 +372,7 @@ class Controller(polyinterface.Controller):
             self.set_all_logs(logging.CRITICAL)
         else:
             LOGGER.error(f"Unknown level {level}")
-        polyinterface.LOG_HANDLER.set_basic_config(True,slevel)
+        LOG_HANDLER.set_basic_config(True,slevel)
 
     def delete(self):
         LOGGER.info('Oh No I\'m being deleted. Nooooooooooooooooooooooooooooooooooooooooo.')

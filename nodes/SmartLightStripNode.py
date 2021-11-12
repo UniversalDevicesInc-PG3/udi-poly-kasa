@@ -3,18 +3,17 @@
 #
 # This code is used for light strips
 #
-import polyinterface,asyncio
+from udi_interface import Node,LOGGER
+import asyncio
 from kasa import SmartLightStrip,SmartDeviceException
 from nodes import SmartBulbNode
-
-LOGGER = polyinterface.LOGGER
 
 # LightSTrip is the same as bulb
 # TODO: Add length Driver for info?
 
 class SmartLightStripNode(SmartBulbNode):
 
-    def __init__(self, controller, address, name, dev=None, cfg=None):
+    def __init__(self, controller, primary, address, name, dev=None, cfg=None):
         LOGGER.debug(f'enter:xxx address={address} name={name}')
         if dev is not None:
             # Figure out the id based in the device info
@@ -46,7 +45,7 @@ class SmartLightStripNode(SmartBulbNode):
         if cfg['color']:
             self.drivers.append({'driver': 'GV3', 'value': 0, 'uom': 100}) #hue
             self.drivers.append({'driver': 'GV4', 'value': 0, 'uom': 100}) #sat
-        super().__init__(controller, address, name, dev, cfg)
+        super().__init__(controller, primary, address, name, dev, cfg)
         self.id = id
         
     def newdev(self):

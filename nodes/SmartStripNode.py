@@ -1,13 +1,12 @@
 
-import polyinterface
+from udi_interface import Node,LOGGER
+import asyncio
 from kasa import SmartStrip,SmartDeviceException
 from nodes import SmartDeviceNode
 
-LOGGER = polyinterface.LOGGER
-
 class SmartStripNode(SmartDeviceNode):
 
-    def __init__(self, controller, address, name, dev=None, cfg=None):
+    def __init__(self, controller, primary, address, name, dev=None, cfg=None):
         self.ready = False
         self.name = name
         if dev is not None:
@@ -27,8 +26,7 @@ class SmartStripNode(SmartDeviceNode):
         LOGGER.debug(f'{self.pfx} controller={controller} address={address} name={name} host={self.host}')
         # The strip is it's own parent since the plugs are it's children so
         # pass my adress as parent
-        super().__init__(controller, address, address, name, dev, cfg)
-        self.controller = controller
+        super().__init__(controller, primary, address, name, dev, cfg)
 
     def start(self):
         LOGGER.debug(f'{self.pfx} enter:')

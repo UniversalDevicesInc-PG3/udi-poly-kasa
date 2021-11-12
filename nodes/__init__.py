@@ -1,7 +1,7 @@
 
-""" Node classes used by the Wireless Sensor Tags Node Server. """
+""" Node classes used by the Kasa Node Server. """
 
-import polyinterface
+import udi_interface
 #import sys
 #sys.path.insert(0,"pyHS100")
 

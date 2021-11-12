@@ -4,15 +4,13 @@
 #
 #
 import re,asyncio
-import polyinterface
+from udi_interface import Node,LOGGER
 from kasa import SmartDeviceException
 from converters import myround,bri2st,st2bri
 
-LOGGER = polyinterface.LOGGER
+class SmartDeviceNode(Node):
 
-class SmartDeviceNode(polyinterface.Node):
-
-    def __init__(self, controller, parent_address, address, name, dev, cfg):
+    def __init__(self, controller, primary, address, name, dev=None, cfg=None):
         self.controller = controller
         self.name = name
         self.dev  = dev
@@ -34,9 +32,10 @@ class SmartDeviceNode(polyinterface.Node):
             self.drivers.append({'driver': 'CPW', 'value': 0, 'uom': 73}) #watts
             self.drivers.append({'driver': 'TPW', 'value': 0, 'uom': 33}) #kWH
         self.cfg['id'] = self.id
-        super().__init__(controller, parent_address, address, name)
+        super().__init__(controller, primary, address, name)
+        controller.poly.subscribe(controller.poly.START,  self.handler_start, address) 
 
-    def start(self):
+    def handler_start(self):
         LOGGER.debug(f'enter: {self.name} dev={self.dev}')
         fut = asyncio.run_coroutine_threadsafe(self.connect_and_update_a(), self.controller.mainloop)
         res = fut.result()

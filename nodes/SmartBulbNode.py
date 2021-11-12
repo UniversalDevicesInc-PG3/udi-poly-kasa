@@ -3,7 +3,8 @@
 #
 # This code is used for bulbs
 #
-import polyinterface,asyncio
+from udi_interface import Node,LOGGER
+import asyncio
 from kasa import SmartBulb,SmartDeviceException
 from nodes import SmartDeviceNode
 from converters import color_hsv, color_rgb, bri2st, st2bri
@@ -12,11 +13,9 @@ from converters import color_hsv, color_rgb, bri2st, st2bri
 # SmartDeviceNode:set_state_a: exit:  dev=<DeviceType.Bulb model KL120(US) at 192.168.86.144 (Test KL120), is_on: True - dev specific: {'Brightness': 50, 'Is dimmable': True, 'Color temperature': 2700, 'Valid temperature range': ColorTempRange(min=2700, max=5000)}>
 # TODO: set_light_state allows setting transition time?
 
-LOGGER = polyinterface.LOGGER
-
 class SmartBulbNode(SmartDeviceNode):
 
-    def __init__(self, controller, address, name, dev=None, cfg=None):
+    def __init__(self, controller, primary, address, name, dev=None, cfg=None):
         self.name = name
         self.debug_level = 0
         self.drivers = [
@@ -55,7 +54,7 @@ class SmartBulbNode(SmartDeviceNode):
             self.drivers.append({'driver': 'GV4', 'value': 0, 'uom': 100}) #sat
         if cfg['emeter']:
             self.drivers.append({'driver': 'CPW', 'value': 0, 'uom': 73})            
-        super().__init__(controller, controller.address, address, name, dev, cfg)
+        super().__init__(controller, primary, address, name, dev, cfg)
 
     async def set_bri_a(self,val):
         self.setDriver('GV5',val)
