@@ -46,7 +46,7 @@ class Controller(Node):
         poly.subscribe(poly.POLL,                   self.handler_poll)
         #poly.subscribe(poly.CUSTOMPARAMS,           self.handler_custom_params)
         #poly.subscribe(poly.LOGLEVEL,               self.handler_log_level)
-        #poly.subscribe(poly.CONFIGDONE,             self.handler_config_done)
+        poly.subscribe(poly.CONFIGDONE,             self.handler_config_done)
         poly.ready()
         poly.addNode(self)
 
@@ -64,6 +64,12 @@ class Controller(Node):
         self.check_params()
         self.discover()
         LOGGER.info(f'exit {self.name}')
+
+    # For things we only do have the configuration is loaded...
+    def handler_config_done(self):
+        LOGGER.debug(f'enter')
+        self.poly.addLogLevel('DEBUG_MODULES',9,'Debug + Modules')
+        LOGGER.debug(f'exit')
 
     def handler_poll(self, polltype):
         if polltype == 'longPoll':
@@ -106,8 +112,8 @@ class Controller(Node):
         
     async def _shortPoll_a(self):
         LOGGER.debug('enter')
-        nodes = self.poly.getNodes()
-        for node in nodes:
+        for node_address in self.poly.getNodes():
+            node = self.poly.getNode(node_address)
             LOGGER.debug(f'node.address={node.address} node.name={node.name} ')
             if node.poll:
                 await node.shortPoll()
@@ -153,8 +159,8 @@ class Controller(Node):
     async def _longPoll_a(self):
         LOGGER.debug('enter')
         all_connected = True
-        nodes = self.poly.getNodes()
-        for node in nodes:
+        for node_address in self.poly.getNodes():
+            node = self.poly.getNode(node_address)
             if node.poll:
                 try:
                     if node.is_connected():
@@ -174,8 +180,8 @@ class Controller(Node):
         self.setDriver('ST', 1)
         self.reportDrivers()
         self.check_params()
-        nodes = self.poly.getNodes()
-        for node in nodes:
+        for node_address in self.poly.getNodes():
+            node = self.poly.getNode(node_address)
             if node.poll:
                 node.query()
 
