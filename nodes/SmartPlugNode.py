@@ -32,11 +32,6 @@ class SmartPlugNode(SmartDeviceNode):
                 self.id += 'N'
         super().__init__(controller, primary, address, name, dev, cfg)
 
-    def start(self):
-        LOGGER.debug(f'enter: {self.dev}')
-        super().start()
-        LOGGER.debug(f'exit: {self.dev}')
-
     def newdev(self):
         return SmartPlug(self.host)
 

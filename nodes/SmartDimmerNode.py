@@ -40,10 +40,6 @@ class SmartDimmerNode(SmartDeviceNode):
             self.drivers.append({'driver': 'TPW', 'value': 0, 'uom': 73})
         super().__init__(controller, primary, address, name, dev, cfg)
 
-    def start(self):
-        super().start()
-        self.set_energy()
-
     def set_bri(self,val):
         LOGGER.debug(f'{self.pfx} connected={self.connected} val={val}')
         if self.is_connected():

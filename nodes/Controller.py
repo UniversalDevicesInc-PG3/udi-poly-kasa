@@ -306,7 +306,7 @@ class Controller(Node):
         if cfg['type'] == 'SmartPlug':
             node = self.poly.addNode(SmartPlugNode(self, parent.address, cfg['address'], cfg['name'], dev=dev, cfg=cfg))
         elif cfg['type'] == 'SmartStrip':
-            node = self.poly.addNode(SmartStripNode(self, parent.address, cfg['address'], cfg['name'],  dev=dev, cfg=cfg))
+            node = self.poly.addNode(SmartStripNode(self, cfg['address'], cfg['name'],  dev=dev, cfg=cfg))
         elif cfg['type'] == 'SmartStripPlug':
             node = self.poly.addNode(SmartStripPlugNode(self, parent.address, cfg['address'], cfg['name'],  dev=dev, cfg=cfg))
         elif cfg['type'] == 'SmartDimmer':

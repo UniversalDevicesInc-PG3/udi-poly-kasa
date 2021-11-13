@@ -6,7 +6,7 @@ from nodes import SmartDeviceNode
 
 class SmartStripNode(SmartDeviceNode):
 
-    def __init__(self, controller, primary, address, name, dev=None, cfg=None):
+    def __init__(self, controller, address, name, dev=None, cfg=None):
         self.ready = False
         self.name = name
         if dev is not None:
@@ -26,11 +26,12 @@ class SmartStripNode(SmartDeviceNode):
         LOGGER.debug(f'{self.pfx} controller={controller} address={address} name={name} host={self.host}')
         # The strip is it's own parent since the plugs are it's children so
         # pass my adress as parent
-        super().__init__(controller, primary, address, name, dev, cfg)
+        super().__init__(controller, address, address, name, dev, cfg)
+        controller.poly.subscribe(controller.poly.START,  self.handler_start, address) 
 
-    def start(self):
+    def handler_start(self):
         LOGGER.debug(f'{self.pfx} enter:')
-        super(SmartStripNode, self).start()
+        super(SmartStripNode, self).handler_start()
         LOGGER.info(f'{self.pfx} {self.dev.alias} has {len(self.dev.children)+1} children')
         for pnum in range(len(self.dev.children)):
             naddress = "{}{:02d}".format(self.address,pnum+1)
