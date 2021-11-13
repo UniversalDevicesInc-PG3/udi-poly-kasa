@@ -23,11 +23,9 @@ class Controller(Node):
 
     def __init__(self, poly, primary, address, name):
         super(Controller, self).__init__(poly, primary, address, name)
-        self.name = 'Kasa Controller'
-        self.address = 'tplkasactl'
-        self.primary = self.address
         self.debug_level = 0 # TODO: More levels to add pyHS100 debugging (see discover.py)
         self.poll    = False
+        self.ready   = False
         self.hb = 0
         self.nodes_by_mac = {}
         self.discover_done = False
@@ -37,21 +35,20 @@ class Controller(Node):
         self.in_short_poll = False
         self.long_event    = False
         self.in_long_poll  = False
-        self.Notices         = Custom(poly, 'notices')
-        self.Data            = Custom(poly, 'customdata')
-        self.Parameters      = Custom(poly, 'customparams')
-        self.TypedParameters = Custom(poly, 'customtypedparams')
-        self.TypedData       = Custom(poly, 'customtypeddata')
-        poly.subscribe(poly.START,                  self.handler_start, address) 
-        poly.subscribe(poly.POLL,                   self.handler_poll)
-        #poly.subscribe(poly.CUSTOMPARAMS,           self.handler_custom_params)
-        #poly.subscribe(poly.LOGLEVEL,               self.handler_log_level)
-        poly.subscribe(poly.CONFIGDONE,             self.handler_config_done)
-        poly.ready()
-        poly.addNode(self)
+        self.Notices         = Custom(self.poly, 'notices')
+        self.Data            = Custom(self.poly, 'customdata')
+        self.Parameters      = Custom(self.poly, 'customparams')
+        #self.TypedParameters = Custom(self.poly, 'customtypedparams')
+        #self.TypedData       = Custom(self.poly, 'customtypeddata')
+        self.poly.subscribe(self.poly.START,                  self.handler_start, address) 
+        self.poly.subscribe(self.poly.POLL,                   self.handler_poll)
+        #self.poly.subscribe(self.poly.CUSTOMPARAMS,           self.handler_custom_params)
+        #self.poly.subscribe(self.poly.LOGLEVEL,               self.handler_log_level)
+        self.poly.subscribe(self.poly.CONFIGDONE,             self.handler_config_done)
+        self.poly.ready()
+        self.poly.addNode(self)
 
     def handler_start(self):
-        #serverdata = self.poly._get_server_data()
         LOGGER.info(f"Started Kasa PG3 NodeServer {self.poly.serverdata['version']}")
         self.Notices.clear()
         self.mainloop = mainloop
@@ -59,10 +56,14 @@ class Controller(Node):
         self.connect_thread = Thread(target=mainloop.run_forever)
         self.connect_thread.start()
         self.setDriver('ST', 1)
-        self.set_debug_level(self.getDriver('GV1'))
         self.heartbeat()
         self.check_params()
-        self.discover()
+        try:
+            self.discover()
+        except:
+            LOGGER.error(f'discover failed', exc_info=True)
+            return False
+        self.ready = True
         LOGGER.info(f'exit {self.name}')
 
     # For things we only do have the configuration is loaded...
@@ -216,7 +217,7 @@ class Controller(Node):
         await Discover.discover(timeout=10,discovery_packets=10,target=self.poly.network_interface['broadcast'],on_discovered=self.discover_add_device)
         # make sure all we know about are added in case they didn't respond this time.
         LOGGER.info(f"Discover.discover done: checking for previously known devices")
-        for mac in self.polyConfig['customParams']:
+        for mac in self.Parameters:
             LOGGER.debug(f'checking mac={mac}')
             if self.smac(mac) in self.devm:
                 LOGGER.debug(f'already added mac={mac}')
@@ -252,6 +253,9 @@ class Controller(Node):
 
     def discover_new(self):
         LOGGER.info('enter')
+        if not self.ready:
+            LOGGER.error("Node is not yet ready")
+            return False
         future = asyncio.run_coroutine_threadsafe(self._discover_new_a(), self.mainloop)
         res = future.result()
         LOGGER.debug(f'result={res}')
@@ -305,17 +309,17 @@ class Controller(Node):
         #
 #         LOGGER.error(f"alb:controller.py:{cfg['type']}")
         if cfg['type'] == 'SmartPlug':
-            node = self.poly.addNode(SmartPlugNode(self, parent, cfg['address'], cfg['name'], dev=dev, cfg=cfg))
+            node = self.poly.addNode(SmartPlugNode(self, parent.address, cfg['address'], cfg['name'], dev=dev, cfg=cfg))
         elif cfg['type'] == 'SmartStrip':
-            node = self.poly.addNode(SmartStripNode(self, cfg['address'], cfg['name'],  dev=dev, cfg=cfg))
+            node = self.poly.addNode(SmartStripNode(self, parent.address, cfg['address'], cfg['name'],  dev=dev, cfg=cfg))
         elif cfg['type'] == 'SmartStripPlug':
-            node = self.poly.addNode(SmartStripPlugNode(self, parent, cfg['address'], cfg['name'],  dev=dev, cfg=cfg))
+            node = self.poly.addNode(SmartStripPlugNode(self, parent.address, cfg['address'], cfg['name'],  dev=dev, cfg=cfg))
         elif cfg['type'] == 'SmartDimmer':
-            node = self.poly.addNode(SmartDimmerNode(self, cfg['address'], cfg['name'], dev=dev, cfg=cfg))
+            node = self.poly.addNode(SmartDimmerNode(self, parent.address, cfg['address'], cfg['name'], dev=dev, cfg=cfg))
         elif cfg['type'] == 'SmartBulb':
-            node = self.poly.addNode(SmartBulbNode(self, cfg['address'], cfg['name'], dev=dev, cfg=cfg))
+            node = self.poly.addNode(SmartBulbNode(self, parent.address, cfg['address'], cfg['name'], dev=dev, cfg=cfg))
         elif cfg['type'] == 'SmartLightStrip':
-            node = self.poly.addNode(SmartLightStripNode(self, cfg['address'], cfg['name'], dev=dev, cfg=cfg))
+            node = self.poly.addNode(SmartLightStripNode(self, parent.address, cfg['address'], cfg['name'], dev=dev, cfg=cfg))
         else:
             LOGGER.error(f"Device type not yet supported: {cfg['type']}")
             return False
@@ -334,9 +338,7 @@ class Controller(Node):
     def save_cfg(self,cfg):
         LOGGER.debug(f'Saving config: {cfg}')
         js = json.dumps(cfg)
-        cparams = self.polyConfig['customParams']
-        cparams[self.smac(cfg['mac'])] = js
-        self.addCustomParam(cparams)
+        self.Parameters[self.smac(cfg['mac'])] = js
 
     def get_device_cfg(self,mac):
         cfg = self.polyConfig['customParams'][self.smac(mac)]

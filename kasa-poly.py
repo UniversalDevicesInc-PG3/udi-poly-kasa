@@ -20,7 +20,7 @@ def main():
     try:
         polyglot = Interface([Controller])
         polyglot.start()
-        control = Controller(polyglot, 'controller', 'controller', 'FlumeWater')
+        control = Controller(polyglot, 'tplkasactl', 'tplkasactl', 'Kasa Controller')
         polyglot.runForever()
     except (KeyboardInterrupt, SystemExit):
         """

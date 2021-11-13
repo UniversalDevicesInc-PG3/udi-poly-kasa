@@ -32,7 +32,7 @@ class SmartDeviceNode(Node):
             self.drivers.append({'driver': 'CPW', 'value': 0, 'uom': 73}) #watts
             self.drivers.append({'driver': 'TPW', 'value': 0, 'uom': 33}) #kWH
         self.cfg['id'] = self.id
-        super().__init__(controller, primary, address, name)
+        super().__init__(controller.poly, primary, address, name)
         controller.poly.subscribe(controller.poly.START,  self.handler_start, address) 
 
     def handler_start(self):
