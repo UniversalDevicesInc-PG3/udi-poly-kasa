@@ -61,15 +61,17 @@ class SmartDeviceNode(Node):
             return
         # Keep trying to connect if possible
         if await self.connect_a():
-            await self.set_state_a()
+            await self.set_state_a(set_energy=False)
         LOGGER.debug(f'exit: {self.name}')
 
     async def longPoll(self):
+        if not self.ready:
+            return
         if not self.connected:
             LOGGER.info(f'{self.pfx} Not connected, will retry...')
             await self.connect_a()
         if self.connected:
-            await self._set_energy_a()
+            await self._set_energy_a(set_energy=True)
 
     async def connect_and_update_a(self):
         await self.connect_a()

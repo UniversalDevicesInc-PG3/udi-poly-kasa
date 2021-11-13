@@ -23,7 +23,6 @@ class Controller(Node):
 
     def __init__(self, poly, primary, address, name):
         super(Controller, self).__init__(poly, primary, address, name)
-        self.debug_level = 0 # TODO: More levels to add pyHS100 debugging (see discover.py)
         self.poll    = False
         self.ready   = False
         self.hb = 0
@@ -36,15 +35,12 @@ class Controller(Node):
         self.long_event    = False
         self.in_long_poll  = False
         self.Notices         = Custom(self.poly, 'notices')
-        self.Data            = Custom(self.poly, 'customdata')
         self.Parameters      = Custom(self.poly, 'customparams')
-        #self.TypedParameters = Custom(self.poly, 'customtypedparams')
-        #self.TypedData       = Custom(self.poly, 'customtypeddata')
         self.poly.subscribe(self.poly.START,                  self.handler_start, address) 
         self.poly.subscribe(self.poly.POLL,                   self.handler_poll)
-        #self.poly.subscribe(self.poly.CUSTOMPARAMS,           self.handler_custom_params)
-        #self.poly.subscribe(self.poly.LOGLEVEL,               self.handler_log_level)
+        self.poly.subscribe(self.poly.LOGLEVEL,               self.handler_log_level)
         self.poly.subscribe(self.poly.CONFIGDONE,             self.handler_config_done)
+        self.poly.subscribe(self.poly.DISCOVER,               self.discover_new)
         self.poly.ready()
         self.poly.addNode(self)
 
@@ -78,7 +74,6 @@ class Controller(Node):
         elif polltype == 'shortPoll':
             self.shortPoll()
 
-    # TODO: Test without having shortpoll/longpoll threads and turn a device on/off and see if it runs in middle or after all?
     def shortPoll(self):
         if not self.discover_done:
             LOGGER.info('waiting for discover to complete')
@@ -350,37 +345,16 @@ class Controller(Node):
             return None
         return cfgd
 
-    def set_all_logs(self,level):
-        LOGGER.setLevel(level)
-        # TODO: Set Kasa query logger level
-        #logging.getLogger('requests').setLevel(level)
 
-    def set_debug_level(self,level):
-        LOGGER.info(f'level={level}')
-        if level is None:
-            level = 10
-        level = int(level)
-        if level == 0:
-            level = 10
-        LOGGER.info(f'Seting GV1 to {level}')
-        self.setDriver('GV1', level)
-        # 0=All 10=Debug are the same because 0 (NOTSET) doesn't show everything.
-        slevel = logging.WARNING
-        if level <= 10:
-            self.set_all_logs(logging.DEBUG)
-            if level < 10:
-                slevel = logging.DEBUG
-        elif level == 20:
-            self.set_all_logs(logging.INFO)
-        elif level == 30:
-            self.set_all_logs(logging.WARNING)
-        elif level == 40:
-            self.set_all_logs(logging.ERROR)
-        elif level == 50:
-            self.set_all_logs(logging.CRITICAL)
+    def handler_log_level(self,level):
+        LOGGER.info(f'enter: level={level}')
+        if level['level'] < 10:
+            LOGGER.info("Setting basic config to DEBUG...")
+            LOG_HANDLER.set_basic_config(True,logging.DEBUG)
         else:
-            LOGGER.error(f"Unknown level {level}")
-        LOG_HANDLER.set_basic_config(True,slevel)
+            LOGGER.info("Setting basic config to WARNING...")
+            LOG_HANDLER.set_basic_config(True,logging.WARNING)
+        LOGGER.info(f'exit: level={level}')
 
     def delete(self):
         LOGGER.info('Oh No I\'m being deleted. Nooooooooooooooooooooooooooooooooooooooooo.')
@@ -396,11 +370,6 @@ class Controller(Node):
         st = self.poly.installprofile()
         return st
 
-    def cmd_set_debug_mode(self,command):
-        val = int(command.get('value'))
-        LOGGER.info(f"val={val}")
-        self.set_debug_level(val)
-
     def _cmd_update_profile(self,command):
         self.update_profile()
 
@@ -409,12 +378,10 @@ class Controller(Node):
 
     id = 'KasaController'
     commands = {
-      'SET_DM': cmd_set_debug_mode,
       'QUERY': query,
       'DISCOVER': _cmd_discover,
       'UPDATE_PROFILE': _cmd_update_profile,
     }
     drivers = [
         {'driver': 'ST',  'value':  1, 'uom':  2} ,
-        {'driver': 'GV1', 'value': 30, 'uom': 25}, # Debug (Log) Mode, default=30 Warning
     ]

@@ -36,12 +36,12 @@ The node server does not require that you reserve IP addresses for the devices, 
 The known list of supported devices models are:
   - HS100 (US)
   - HS110 (US)
-  - HS300 (US)
+  - HS220 (US)
+  - HS300 (US) SmartStrip
   - KL110 (US)
   - KL120 (US)
-    * Currently limited to on/off and brightness. Can not set temperature yet.
   - KL130 (US)
-    * Currently limited to on/off and brightness. Can not set colors or temperature yet.
+  - KL430 (US) LightStrip
 
 If you have another device not listed and it is working properly please let me know.
 
@@ -60,12 +60,6 @@ The settings for this node are
    * Status of nodeserver process, this should be monitored by a program if you want to know the status
 #### TODO: Devices
    * The number of devices currently managed
-#### TODO: Debug Mode
-   * The debug printing mode
-#### TODO: Short Poll
-   * This is how often it will Poll the Devices to get status
-#### TODO: Long Poll
-   * Updates other device status like emeter.
 
 ### Node Commands
 
@@ -111,6 +105,8 @@ Open the Polyglot web page, go to nodeserver store and click "Update" for "Kasa"
 Then restart the Kasa nodeserver by selecting it in the Polyglot dashboard and select Control -> Restart, then watch the log to make sure everything goes well.
 
 # Release Notes
+- 3.0.0: 11/13/2021
+  - First PG3 release!
 - 2.5.0: 04/28/2021
   - [Added HS220 support](https://github.com/jimboca/udi-poly-kasa/pull/18) Thanks to @albrandwood
 - 2.4.7: 12/10/2020

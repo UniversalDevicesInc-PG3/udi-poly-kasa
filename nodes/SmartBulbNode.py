@@ -7,7 +7,7 @@ from udi_interface import Node,LOGGER
 import asyncio
 from kasa import SmartBulb,SmartDeviceException
 from nodes import SmartDeviceNode
-from converters import color_hsv, color_rgb, bri2st, st2bri
+from converters import color_hsv, color_rgb, bri2st, st2bri, rgb2hsv
 
 # TODO: Use min/max values to get correct NodeDef
 # SmartDeviceNode:set_state_a: exit:  dev=<DeviceType.Bulb model KL120(US) at 192.168.86.144 (Test KL120), is_on: True - dev specific: {'Brightness': 50, 'Is dimmable': True, 'Color temperature': 2700, 'Valid temperature range': ColorTempRange(min=2700, max=5000)}>
@@ -112,10 +112,10 @@ class SmartBulbNode(SmartDeviceNode):
         await self.dev.set_color_temp(int(val))
         await self.set_state_a()
 
-    async def set_color_temp_brightness_a(self,color_temp,brightness):
-        LOGGER.debug(f'{self.pfx} color_temp={color_temp} brightness={brightness}')
+    async def set_color_temp_brightness_a(self,color_temp,brightness,duration):
+        LOGGER.debug(f'{self.pfx} color_temp={color_temp} brightness={brightness} duration={duration}')
         if not self.dev.is_variable_color_temp:
-            LOGGER.error('{self.pfx} Color Temperature Not supported on this device?')
+            LOGGER.error(f'{self.pfx} Color Temperature Not supported on this device?')
             return False
         light_state = await self.dev.get_light_state()
         LOGGER.debug(f'{self.pfx} current_state={light_state}')
@@ -141,6 +141,43 @@ class SmartBulbNode(SmartDeviceNode):
         hsv = color_hsv(val)
         LOGGER.debug(f'set_color_name rgb={rgb} hsv={hsv}')
         await self.dev.set_hsv(hue=hsv[0], saturation=hsv[1], value=hsv[2])
+        await self.set_state_a()
+
+    async def set_color_rgb_a(self,red,green,blue,brightness,duration):
+        LOGGER.debug(f'{self.pfx} red={red} green={green} blue={blue} brightness={brightness} duration={duration}')
+        if not self.dev.is_color:
+            LOGGER.error(f'{self.pfx} Color not supported on this device?')
+            return False
+        hsv = rgb2hsv(red,green,blue)
+        light_state = await self.dev.get_light_state()
+        LOGGER.debug(f'{self.pfx} current_state={light_state}')
+        light_state['on_off'] = 1
+        light_state['brightness'] = bri2st(brightness)
+        light_state['transition'] = duration
+        LOGGER.debug(f'{self.pfx}     new_state={light_state}')
+        try:
+            await self.dev.set_light_state(light_state)
+        except SmartDeviceException as ex:
+            LOGGER.error(f'{self.pfx} failed: {ex}')
+        await self.dev.set_hsv(hue=hsv[0], saturation=hsv[1], value=hsv[2])
+        await self.set_state_a()
+
+    async def set_color_hsv_a(self,hue,saturation,brightness,duration):
+        LOGGER.debug(f'{self.pfx} hue={hue} saturation={saturation} brightness={brightness} duration={duration}')
+        if not self.dev.is_color:
+            LOGGER.error(f'{self.pfx} Color not supported on this device?')
+            return False
+        light_state = await self.dev.get_light_state()
+        LOGGER.debug(f'{self.pfx} current_state={light_state}')
+        light_state['on_off'] = 1
+        light_state['brightness'] = bri2st(brightness)
+        light_state['transition'] = duration
+        LOGGER.debug(f'{self.pfx}     new_state={light_state}')
+        try:
+            await self.dev.set_light_state(light_state)
+        except SmartDeviceException as ex:
+            LOGGER.error(f'{self.pfx} failed: {ex}')
+        await self.dev.set_hsv(hue=hue, saturation=bri2st(saturation), value=bri2st(brightness))
         await self.set_state_a()
 
     def newdev(self):
@@ -199,14 +236,43 @@ class SmartBulbNode(SmartDeviceNode):
     def cmd_set_color_temp_brightness(self, command):
         query = command.get('query')
         LOGGER.info(f'query={query}')
-        fut = asyncio.run_coroutine_threadsafe(self.set_color_temp_brightness_a(int(query.get('K.uom26')),int(query.get('BR.uom100'))), self.controller.mainloop)
+        fut = asyncio.run_coroutine_threadsafe(
+            self.set_color_temp_brightness_a(
+                int(query.get('K.uom26')),
+                int(query.get('BR.uom100'))
+            ), 
+            self.controller.mainloop
+        )
         return fut.result()
 
-    def cmd_set_hsv(self, command):
-       LOGGER.error('TODO: Not yet implemented')
-
     def cmd_set_color_rgb(self, command):
-       LOGGER.error('TODO: Not yet implemented')
+        query = command.get('query')
+        LOGGER.info(f'query={query}')
+        fut = asyncio.run_coroutine_threadsafe(
+            self.set_color_rgb_a(
+                int(query.get('R.uom100')),
+                int(query.get('G.uom100')),
+                int(query.get('B.uom100')),
+                int(query.get('BR.uom100')),
+                int(query.get('D.uom42')),
+            ),
+            self.controller.mainloop
+        )
+        return fut.result()
+
+    def cmd_set_color_hsv(self, command):
+        query = command.get('query')
+        LOGGER.info(f'query={query}')
+        fut = asyncio.run_coroutine_threadsafe(
+            self.set_color_hsv_a(
+                int(query.get('H.uom100')),
+                int(query.get('S.uom100')),
+                int(query.get('BR.uom100')),
+                int(query.get('D.uom42')),
+            ),
+            self.controller.mainloop
+        )
+        return fut.result()
 
     def cmd_set_color_xy(self, command):
        LOGGER.error('TODO: Not yet implemented')
@@ -222,7 +288,7 @@ class SmartBulbNode(SmartDeviceNode):
         'CLITEMP' : cmd_set_color_temp,
         'SET_CTBR' : cmd_set_color_temp_brightness,
         'SET_COLOR' : cmd_set_color_name,
-        'SET_HSV' : cmd_set_hsv,
+        'SET_HSV' : cmd_set_color_hsv,
         'SET_COLOR_RGB': cmd_set_color_rgb,
         'SET_COLOR_XY': cmd_set_color_xy,
     }

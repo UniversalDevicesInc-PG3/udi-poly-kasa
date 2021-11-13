@@ -5,7 +5,6 @@
         <editors />
         <sts>
             <st id="ST" editor="bool" />
-            <st id="GV1" editor="I_DEBUG" />
         </sts>
         <cmds>
             <sends>
@@ -13,9 +12,6 @@
                 <cmd id="DOF" />
             </sends>
             <accepts>
-                <cmd id="SET_DM">
-                    <p id="" editor="I_DEBUG" init="GV1" />
-                </cmd>
                 <cmd id="QUERY" />
                 <cmd id="DISCOVER" />
                 <cmd id="UPDATE_PROFILE" />
