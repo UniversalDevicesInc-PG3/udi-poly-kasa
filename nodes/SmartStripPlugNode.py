@@ -14,6 +14,7 @@ class SmartStripPlugNode(SmartDeviceNode):
         # All StripPlugs have these.
         self.debug_level = 0
         self.name = name
+        self.primary_node = controller.poly.getNode(primary)
         # All devices have these.
         self.drivers = [
             {'driver': 'ST', 'value': 0, 'uom': 78},
@@ -45,7 +46,7 @@ class SmartStripPlugNode(SmartDeviceNode):
         super().cmd_set_off(command)
 
     def is_connected(self):
-        return self.parent.is_connected()
+        return self.primary_node.is_connected()
         
     commands = {
         'DON': cmd_set_on,

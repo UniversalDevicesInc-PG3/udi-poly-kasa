@@ -226,8 +226,10 @@ class Controller(Node):
         return True
 
     async def discover_new_add_device(self,dev):
+        LOGGER.debug(f'enter: dev={dev}')
         # Known Device?
         await dev.update()
+        LOGGER.debug(f'dev={dev}')
         smac = self.smac(dev.mac)
         if smac in self.nodes_by_mac:
             # Make sure the host matches
@@ -243,7 +245,7 @@ class Controller(Node):
                     LOGGER.warning(f"Connected:{node.is_connected()} '{node.name}' host is {node.host} same as {dev.host}")
                     await node.connect_a()
         else:
-            LOGGER.info(f'found new device {dev.alias}')
+            LOGGER.warning(f'Found a new device, adding it... {dev.alias}')
             self.add_node(dev=dev)
 
     def discover_new(self):
@@ -304,22 +306,26 @@ class Controller(Node):
         #
 #         LOGGER.error(f"alb:controller.py:{cfg['type']}")
         if cfg['type'] == 'SmartPlug':
-            node = self.poly.addNode(SmartPlugNode(self, parent.address, cfg['address'], cfg['name'], dev=dev, cfg=cfg))
+            self.poly.addNode(SmartPlugNode(self, parent.address, cfg['address'], cfg['name'], dev=dev, cfg=cfg))
         elif cfg['type'] == 'SmartStrip':
-            node = self.poly.addNode(SmartStripNode(self, cfg['address'], cfg['name'],  dev=dev, cfg=cfg))
+            self.poly.addNode(SmartStripNode(self, cfg['address'], cfg['name'],  dev=dev, cfg=cfg))
         elif cfg['type'] == 'SmartStripPlug':
-            node = self.poly.addNode(SmartStripPlugNode(self, parent.address, cfg['address'], cfg['name'],  dev=dev, cfg=cfg))
+            self.poly.addNode(SmartStripPlugNode(self, parent.address, cfg['address'], cfg['name'],  dev=dev, cfg=cfg))
         elif cfg['type'] == 'SmartDimmer':
-            node = self.poly.addNode(SmartDimmerNode(self, parent.address, cfg['address'], cfg['name'], dev=dev, cfg=cfg))
+            self.poly.addNode(SmartDimmerNode(self, parent.address, cfg['address'], cfg['name'], dev=dev, cfg=cfg))
         elif cfg['type'] == 'SmartBulb':
-            node = self.poly.addNode(SmartBulbNode(self, parent.address, cfg['address'], cfg['name'], dev=dev, cfg=cfg))
+            self.poly.addNode(SmartBulbNode(self, parent.address, cfg['address'], cfg['name'], dev=dev, cfg=cfg))
         elif cfg['type'] == 'SmartLightStrip':
-            node = self.poly.addNode(SmartLightStripNode(self, parent.address, cfg['address'], cfg['name'], dev=dev, cfg=cfg))
+            self.poly.addNode(SmartLightStripNode(self, parent.address, cfg['address'], cfg['name'], dev=dev, cfg=cfg))
         else:
             LOGGER.error(f"Device type not yet supported: {cfg['type']}")
             return False
         # We always add it to update the host if necessary
-        self.nodes_by_mac[self.smac(cfg['mac'])] = node
+        node = self.poly.getNode(cfg['address'])
+        if node is None:
+            LOGGER.error(f"Unable to retrieve node address {cfg['address']} for {type} returned {node}")
+        else:
+            self.nodes_by_mac[self.smac(cfg['mac'])] = node
         LOGGER.debug(f'exit: dev={dev}')
         return True
 
@@ -344,7 +350,6 @@ class Controller(Node):
             LOGGER.error(f'failed to parse cfg={cfg} Error: {err}')
             return None
         return cfgd
-
 
     def handler_log_level(self,level):
         LOGGER.info(f'enter: level={level}')
