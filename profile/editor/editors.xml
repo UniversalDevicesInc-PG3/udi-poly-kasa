@@ -100,7 +100,7 @@
         <range uom="26" min="2500" max="6500" prec="0" step="1" />
     </editor>
 
-    <!-- Hue Duration Editor -->
+    <!-- Duration Editor -->
     <editor id="HDURATION">
         <range uom="42" min="0" max="540000" prec="0" step="100" />
     </editor>

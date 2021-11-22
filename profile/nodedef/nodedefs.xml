@@ -298,7 +298,7 @@
             <st id="ST" editor="HCLST" />          <!-- Bulb Status, current brightnes level 0-100 -->
             <st id="GV0" editor="bool" />          <!-- Responding -->
             <st id="CLITEMP" editor="HKELVIN" />   <!-- Color Temperature -->
-            <!-- <st id="RR" editor="HDURATION" /> -->
+            <st id="RR" editor="HDURATION" />      <!-- Duration, or Ramp Rate -->
             <st id="GV3" editor="HCLHUE" /> <!-- Hue -->
             <st id="GV4" editor="HCLSAT" /> <!-- Saturation -->
             <st id="GV5" editor="HCLBRI" />        <!-- Brightness 1-254 -->
@@ -383,7 +383,7 @@
             <st id="ST" editor="HCLST" />
             <st id="GV0" editor="bool" />          <!-- Responding -->
             <st id="CLITEMP" editor="HKELVIN" />   <!-- Color Temperature -->
-            <!-- <st id="RR" editor="HDURATION" /> -->
+            <st id="RR" editor="HDURATION" />      <!-- Duration, or Ramp Rate -->
             <st id="GV5" editor="HCLBRI" />        <!-- Brightness -->
             <st id="CC" editor="raw" />      <!-- Driver=Current Current = energy['current'] -->
             <st id="CV" editor="raw" />      <!-- Driver=Current Voltage = energy['voltage'] -->

@@ -91,7 +91,7 @@ ST-sb-GV2-NAME = Color Temperature
 ST-sb-GV3-NAME = Hue
 ST-sb-GV4-NAME = Saturation
 ST-sb-GV5-NAME = Brightness
-ST-sb-RR-NAME = Transition time
+ST-sb-RR-NAME = Duration Time
 ST-sb-CLITEMP-NAME = Color Temperature
 
 # SmartLightStrip
@@ -117,7 +117,7 @@ CMD-QUERY-NAME = Query
 CMD-SET_SAT-NAME = Set Saturation
 CMD-SET_BRI-NAME = Set Brightness
 CMD-CLITEMP-NAME = Set Color Temperature
-CMD-RR-NAME = Set Transition Time
+CMD-RR-NAME = Set Duration Time
 CMD-SET_HSV-NAME = Set HSV Color
 CMD-SET_COLOR-NAME = Set Color
 CMD-SET_ALERT-NAME = Set Alert
