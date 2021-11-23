@@ -105,6 +105,8 @@ Open the Polyglot web page, go to nodeserver store and click "Update" for "Kasa"
 Then restart the Kasa nodeserver by selecting it in the Polyglot dashboard and select Control -> Restart, then watch the log to make sure everything goes well.
 
 # Release Notes
+- 3.0.4: 11/22/2021
+   - More Duration fixes (RR) in nodedef, but still not completely working
 - 3.0.3: 11/21/2021
   - Fix Duration Time, although not completly working
 - 3.0.2: 11/13/2021
