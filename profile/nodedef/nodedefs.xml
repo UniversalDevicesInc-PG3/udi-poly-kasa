@@ -352,8 +352,8 @@
                     <p id="BR" editor="HCLBRI" init="GV5" />
                 </cmd>
                 <cmd id="SET_COLOR_XY">
-                    <p id="X" editor="HCLXY" init="GV1" />
-                    <p id="Y" editor="HCLXY" init="GV2" />
+                    <p id="X" editor="HCLXY" />
+                    <p id="Y" editor="HCLXY" />
                     <p id="D" editor="HDURATION" init="RR" />
                     <p id="BR" editor="HCLBRI" init="GV5" />
                 </cmd>
@@ -552,8 +552,8 @@
                     <p id="BR" editor="HCLBRI" init="GV5" />
                 </cmd>
                 <cmd id="SET_COLOR_XY">
-                    <p id="X" editor="HCLXY" init="GV1" />
-                    <p id="Y" editor="HCLXY" init="GV2" />
+                    <p id="X" editor="HCLXY" />
+                    <p id="Y" editor="HCLXY" />
                     <p id="D" editor="HDURATION" init="RR" />
                     <p id="BR" editor="HCLBRI" init="GV5" />
                 </cmd>
