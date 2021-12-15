@@ -35,7 +35,7 @@
     </editor>
 
     <editor id="raw">
-        <range uom="56" subset="0-1600" prec="2" />
+        <range uom="56" min="0" max="1600" prec="2" />
     </editor>
 
     <editor id="watts">

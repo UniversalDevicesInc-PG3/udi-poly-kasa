@@ -100,11 +100,11 @@ If you have an issue where the nodes are not showing up properly, open the Polyg
 
 # Upgrading
 
-Open the Polyglot web page, go to nodeserver store and click "Update" for "Kasa".
-
-Then restart the Kasa nodeserver by selecting it in the Polyglot dashboard and select Control -> Restart, then watch the log to make sure everything goes well.
+Restart the Kasa nodeserver by selecting it in the Polyglot dashboard and select Control -> Restart, then watch the log to make sure everything goes well.
 
 # Release Notes
+- 3.0.6: 12/14/2021
+  - Fixed profile for Status of all devices that have energy values
 - 3.0.5: 11/23/2021
    - Fix Set XY initial values to not use any driver to fix UDMobile error
 - 3.0.4: 11/22/2021

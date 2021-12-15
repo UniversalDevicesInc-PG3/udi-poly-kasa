@@ -100,7 +100,7 @@
             </accepts>
         </cmds>
     </nodeDef>
-
+ 
     <!-- SmartPlug_NE - Not Dimmable, Emeter -->
     <nodeDef id="SmartPlug_NE" nls="spe">
         <editors />
