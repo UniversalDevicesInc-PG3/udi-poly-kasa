@@ -4,7 +4,7 @@
     <nodeDef id="KasaController" nls="ctl">
         <editors />
         <sts>
-            <st id="ST" editor="bool" />
+            <st id="ST" editor="cst" />
         </sts>
         <cmds>
             <sends>

@@ -103,6 +103,9 @@ If you have an issue where the nodes are not showing up properly, open the Polyg
 Restart the Kasa nodeserver by selecting it in the Polyglot dashboard and select Control -> Restart, then watch the log to make sure everything goes well.
 
 # Release Notes
+- 3.0.7: 12/14/2021
+  - Added conn_status to Controller so ST is properly set
+    - Existing users will need to delete the controller node in the Polyglot UI and restart the NS
 - 3.0.6: 12/14/2021
   - Fixed profile for Status of all devices that have energy values
 - 3.0.5: 11/23/2021

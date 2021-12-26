@@ -42,7 +42,7 @@ class Controller(Node):
         self.poly.subscribe(self.poly.CONFIGDONE,             self.handler_config_done)
         self.poly.subscribe(self.poly.DISCOVER,               self.discover_new)
         self.poly.ready()
-        self.poly.addNode(self)
+        self.poly.addNode(self, conn_status='ST')
 
     def handler_start(self):
         LOGGER.info(f"Started Kasa PG3 NodeServer {self.poly.serverdata['version']}")
@@ -388,5 +388,5 @@ class Controller(Node):
       'UPDATE_PROFILE': _cmd_update_profile,
     }
     drivers = [
-        {'driver': 'ST',  'value':  1, 'uom':  2} ,
+        {'driver': 'ST',  'value':  1, 'uom':  25} ,
     ]

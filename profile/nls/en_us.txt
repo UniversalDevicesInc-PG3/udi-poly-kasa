@@ -15,6 +15,11 @@ ND-UnknownBulbModel-ICON = Lamp
 ND-UnknownStripModel-NAME = Unknown Strip Model
 ND-UnknownStripModel-ICON = GenericCtl
 
+# Controller Status
+CST-0 = Disconnected
+CST-1 = Connected
+CST-2 = Failed
+
 CDM-9 = Debug+
 CDM-10 = Debug
 CDM-20 = Info
