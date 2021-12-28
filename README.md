@@ -1,9 +1,9 @@
 
 [![Build Status](https://travis-ci.org/jimboca/udi-poly-kasa.svg?branch=master)](https://travis-ci.org/jimboca/udi-kasa)
 
-# kasa-polyglot
+# UDI Polyglot V3 Kasa Nodeserver
 
-This is the [TP Link Kasa](https://www.kasasmart.com/us) Poly for the [Universal Devices ISY994i](https://www.universal-devices.com/residential/ISY) [Polyglot interface](http://www.universal-devices.com/developers/polyglot/docs/) with  [Polyglot V2](https://github.com/Einstein42/udi-polyglotv2)
+This is the [TP Link Kasa](https://www.kasasmart.com/us) Poly for the [Universal Devices ISY994i](https://www.universal-devices.com/residential/ISY) [Polyglot interface](http://www.universal-devices.com/developers/polyglot/docs/) with  [Polyglot V3](https://github.com/UniversalDevicesInc/pg3)
 (c) JimBoCA aka Jim Searle
 MIT license.
 
