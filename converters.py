@@ -30,6 +30,11 @@ colors = {
     23: ['white', [255, 255, 255]]
  }
 
+def myround(number, ndigits=None):
+    if number is None:
+        number = 0
+    return round(number,ndigits)
+
 # From: http://code.activestate.com/recipes/576919-python-rgb-and-hsv-conversion/
 # Easier to use than colorsys.rgb_to_hsv
 def rgb2hsv(r, g, b):

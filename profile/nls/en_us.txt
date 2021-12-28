@@ -15,6 +15,11 @@ ND-UnknownBulbModel-ICON = Lamp
 ND-UnknownStripModel-NAME = Unknown Strip Model
 ND-UnknownStripModel-ICON = GenericCtl
 
+# Controller Status
+CST-0 = Disconnected
+CST-1 = Connected
+CST-2 = Failed
+
 CDM-9 = Debug+
 CDM-10 = Debug
 CDM-20 = Info
@@ -27,11 +32,15 @@ ST-ST-NAME = Status
 ST-GV0-NAME = Connected
 
 # Smart Strip
-ND-SmartStrip-NAME = Smart Strip
-ND-SmartStrip-ICON = GenericCtl
+ND-SmartStrip_N-NAME = Smart Strip
+ND-SmartStrip_N-ICON = GenericCtl
+ND-SmartStrip_E-NAME = Smart Strip Energy
+ND-SmartStrip_E-ICON = GenericCtl
 
-ND-SmartStripPlug-NAME = Smart Strip Plug
-ND-SmartStripPlug-ICON = GenericCtl
+ND-SmartStripPlug_N-NAME = Smart Strip Plug
+ND-SmartStripPlug_N-ICON = GenericCtl
+ND-SmartStripPlug_E-NAME = Smart Strip Plug Energy
+ND-SmartStripPlug_E-ICON = GenericCtl
 
 # SmartPlugs
 ND-SmartPlug_NN-NAME = SmartPlug
@@ -87,7 +96,7 @@ ST-sb-GV2-NAME = Color Temperature
 ST-sb-GV3-NAME = Hue
 ST-sb-GV4-NAME = Saturation
 ST-sb-GV5-NAME = Brightness
-ST-sb-RR-NAME = Transition time
+ST-sb-RR-NAME = Duration Time
 ST-sb-CLITEMP-NAME = Color Temperature
 
 # SmartLightStrip
@@ -113,7 +122,7 @@ CMD-QUERY-NAME = Query
 CMD-SET_SAT-NAME = Set Saturation
 CMD-SET_BRI-NAME = Set Brightness
 CMD-CLITEMP-NAME = Set Color Temperature
-CMD-RR-NAME = Set Transition Time
+CMD-RR-NAME = Set Duration Time
 CMD-SET_HSV-NAME = Set HSV Color
 CMD-SET_COLOR-NAME = Set Color
 CMD-SET_ALERT-NAME = Set Alert

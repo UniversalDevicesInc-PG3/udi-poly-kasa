@@ -5,6 +5,10 @@
         <range uom="2" subset="0,1" />
     </editor>
 
+    <editor id="cst">
+      <range uom="25" subset="0,1,2" nls="CST"/>
+    </editor>
+
     <editor id="I_DEBUG">
       <range uom="25" subset="9,10,20,30,40,50" nls="CDM"/>
     </editor>
@@ -35,7 +39,7 @@
     </editor>
 
     <editor id="raw">
-        <range uom="56" subset="0-1600" prec="2" />
+        <range uom="56" min="0" max="1600" prec="2" />
     </editor>
 
     <editor id="watts">
@@ -100,7 +104,7 @@
         <range uom="26" min="2500" max="6500" prec="0" step="1" />
     </editor>
 
-    <!-- Hue Duration Editor -->
+    <!-- Duration Editor -->
     <editor id="HDURATION">
         <range uom="42" min="0" max="540000" prec="0" step="100" />
     </editor>

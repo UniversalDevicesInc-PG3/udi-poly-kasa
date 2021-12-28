@@ -1,14 +1,15 @@
 
-""" Node classes used by the Wireless Sensor Tags Node Server. """
+""" Node classes used by the Kasa Node Server. """
 
-import sys,polyinterface
-sys.path.insert(0,"pyHS100")
+import udi_interface
+#import sys
+#sys.path.insert(0,"pyHS100")
 
-from .SmartDeviceNode    import SmartDeviceNode
-from .SmartStripPlugNode import SmartStripPlugNode
-from .SmartStripNode     import SmartStripNode
-from .SmartPlugNode      import SmartPlugNode
-from .SmartDimmerNode    import SmartDimmerNode
-from .SmartBulbNode      import SmartBulbNode
-from .SmartLightStripNode import SmartLightStripNode
-from .Controller         import Controller
+from .SmartDeviceNode      import SmartDeviceNode
+from .SmartStripNode       import SmartStripNode
+from .SmartStripPlugNode   import SmartStripPlugNode
+from .SmartPlugNode        import SmartPlugNode
+from .SmartDimmerNode      import SmartDimmerNode
+from .SmartBulbNode        import SmartBulbNode
+from .SmartLightStripNode  import SmartLightStripNode
+from .Controller           import Controller

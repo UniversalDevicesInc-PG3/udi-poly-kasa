@@ -3,17 +3,15 @@
 #
 # This code is used for dimmers (HS220)
 #
-import polyinterface,asyncio
+from udi_interface import Node,LOGGER
+import asyncio
 from kasa import SmartPlug,SmartDimmer,SmartDeviceException
 from converters import bri2st,st2bri
-
 from nodes import SmartDeviceNode
-
-LOGGER = polyinterface.LOGGER
 
 class SmartDimmerNode(SmartDeviceNode):
 
-    def __init__(self, controller, address, name, cfg=None, dev=None):
+    def __init__(self, controller, primary, address, name, dev=None, cfg=None):
         # All plugs have these.
         self.debug_level = 0
         self.name = name
@@ -40,15 +38,7 @@ class SmartDimmerNode(SmartDeviceNode):
             self.drivers.append({'driver': 'CV', 'value': 0, 'uom': 56})
             self.drivers.append({'driver': 'CPW', 'value': 0, 'uom': 73})
             self.drivers.append({'driver': 'TPW', 'value': 0, 'uom': 73})
-        super().__init__(controller, controller.address, address, name, dev, cfg)
-
-    def start(self):
-        super().start()
-        self.set_energy()
-
-    def longPoll(self):
-        super().longPoll()
-        self.set_energy()
+        super().__init__(controller, primary, address, name, dev, cfg)
 
     def set_bri(self,val):
         LOGGER.debug(f'{self.pfx} connected={self.connected} val={val}')

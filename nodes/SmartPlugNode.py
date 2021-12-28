@@ -3,16 +3,14 @@
 #
 # This code is used for plugs
 #
-import polyinterface
+from udi_interface import Node,LOGGER
+import asyncio
 from kasa import SmartPlug,SmartDeviceException
-
 from nodes import SmartDeviceNode
-
-LOGGER = polyinterface.LOGGER
 
 class SmartPlugNode(SmartDeviceNode):
 
-    def __init__(self, controller, address, name, cfg=None, dev=None):
+    def __init__(self, controller, primary, address, name, dev=None, cfg=None):
         # All plugs have these.
         self.debug_level = 0
         self.name = name
@@ -32,21 +30,7 @@ class SmartPlugNode(SmartDeviceNode):
                 self.id += 'E'
             else:
                 self.id += 'N'
-            cfg['emeter'] = dev.has_emeter
-        if cfg['emeter']:
-            self.drivers.append({'driver': 'CC', 'value': 0, 'uom': 56})
-            self.drivers.append({'driver': 'CV', 'value': 0, 'uom': 56})
-            self.drivers.append({'driver': 'CPW', 'value': 0, 'uom': 73})
-            self.drivers.append({'driver': 'TPW', 'value': 0, 'uom': 73})
-        super().__init__(controller, controller.address, address, name, dev, cfg)
-
-    def start(self):
-        super().start()
-        self.set_energy()
-
-    def longPoll(self):
-        super().longPoll()
-        self.set_energy()
+        super().__init__(controller, primary, address, name, dev, cfg)
 
     def newdev(self):
         return SmartPlug(self.host)
