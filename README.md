@@ -3,13 +3,35 @@
 
 # UDI Polyglot V3 Kasa Nodeserver
 
-This is the [TP Link Kasa](https://www.kasasmart.com/us) Poly for the [Universal Devices ISY994i](https://www.universal-devices.com/residential/ISY) [Polyglot interface](http://www.universal-devices.com/developers/polyglot/docs/) with  [Polyglot V3](https://github.com/UniversalDevicesInc/pg3)
+This is the [TP Link Kasa](https://www.kasasmart.com/us) Poly for the [Universal Devices Polisy](https://www.universal-devices.com) with [Polyglot Version 3 (PG3)](https://github.com/UniversalDevicesInc/pg3)
+
 (c) JimBoCA aka Jim Searle
 MIT license.
 
-This node server is intended to support all devices supported by the [pyHS100 Python Library](https://github.com/GadgetReactor/pyHS100/blob/master/README.md)
+This node server is intended to support all devices supported by the [Python Kasa Library](https://github.com/python-kasa/python-kasa)
 
-This nodeserver relies on a mostly undocumented and officially supported local API which of course TP-Link could break at any time.
+This nodeserver relies on a mostly undocumented and unofficially supported local API which of course TP-Link could break at any time, and has in the past, but luckily others figure it out.
+
+## Help
+
+If you have any issues are questions you can ask on [PG3 Kasa SubForum](https://forum.universal-devices.com/forum/313-kasa-tp-link/) or report an issue at [PG3 Kasa Github issues](https://github.com/UniversalDevicesInc-PG3/udi-poly-kasa/issues).
+
+## Moving from PG2
+
+There are a few ways to move.
+
+### Backup and Restore
+
+The best way to move from PG2 to PG3 is to backup on PG2 and restore on PG3, but the only option is to do all your nodeservers at once.  I don't have much information on this method, if you have questions please ask on the PG3 forum.
+
+### Delete and add
+
+If you can't or don't want backup/restore then you can delete the NS on PG2 and install on the same slot on PG2.  All node addresses will stay the same so all your programs should work after doing an update and save on each one, or rebooting the ISY, especially any using the Controller node since it's ST value has changed.
+
+### Add then delete
+
+Another option is to install in a new slot then go edit all your programs and scenes that reference the nodes and switch to the new slots. 
+
 
 ## Installation
 
@@ -18,9 +40,8 @@ This nodeserver will only work on a machine running on your local network, it wi
 1. Backup Your ISY in case of problems!
    * Really, do the backup, please
 2. Go to the Polyglot Store in the UI and install.
-3. Add NodeServer in Polyglot Web
-4. Open the admin console (close and re-open if you had it open) and you should see a new node 'Kasa Controller'
-5. The auto-discover should automatically run and find your devices and add them.  Verify by checking the nodeserver log
+3. Open the admin console (close and re-open if you had it open) and you should see a new node 'Kasa Controller'
+4. The auto-discover should automatically run and find your devices and add them.  Verify by checking the nodeserver log
    * While this is running you can view the nodeserver log in the Polyglot UI to see what it's doing
 
 ## Usage
