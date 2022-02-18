@@ -176,10 +176,6 @@ class Controller(Node):
         self.setDriver('ST', 1)
         self.reportDrivers()
         self.check_params()
-        for node_address in self.poly.getNodes():
-            node = self.poly.getNode(node_address)
-            if node.poll:
-                node.query()
 
     def heartbeat(self):
         LOGGER.debug('hb={self.hb}')
@@ -327,7 +323,7 @@ class Controller(Node):
         else:
             self.nodes_by_mac[self.smac(cfg['mac'])] = node
         LOGGER.debug(f'exit: dev={dev}')
-        return True
+        return node
 
     def smac(self,mac):
         return re.sub(r'[:]+', '', mac)
@@ -375,6 +371,13 @@ class Controller(Node):
         st = self.poly.installprofile()
         return st
 
+    def _cmd_query_all(self,command):
+        self.query()
+        for node_address in self.poly.getNodes():
+            node = self.poly.getNode(node_address)
+            if node.poll:
+                node.query()
+
     def _cmd_update_profile(self,command):
         self.update_profile()
 
@@ -384,6 +387,7 @@ class Controller(Node):
     id = 'KasaController'
     commands = {
       'QUERY': query,
+      'QUERY_ALL': _cmd_query_all,
       'DISCOVER': _cmd_discover,
       'UPDATE_PROFILE': _cmd_update_profile,
     }

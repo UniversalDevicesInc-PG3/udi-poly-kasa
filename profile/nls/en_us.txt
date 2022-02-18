@@ -1,7 +1,8 @@
 # controller
 ND-KasaController-NAME = TP Link Kasa Controller
 ND-KasaController-ICON = GenericCtl
-CMD-ctl-QUERY"-NAME = Query
+CMD-ctl-QUERY-NAME = Query
+CMD-ctl-QUERY_ALL-NAME = Query All
 CMD-ctl-DISCOVER-NAME = Discover
 CMD-ctl-UPDATE_PROFILE-NAME = Update Profile
 CMD-ctl-SET_DM-NAME = Set Logger Level
@@ -30,6 +31,7 @@ CDM-50 = Critical
 # All Devices
 ST-ST-NAME = Status
 ST-GV0-NAME = Connected
+CMD-QUERY_ALL-NAME = Query All
 
 # Smart Strip
 ND-SmartStrip_N-NAME = Smart Strip

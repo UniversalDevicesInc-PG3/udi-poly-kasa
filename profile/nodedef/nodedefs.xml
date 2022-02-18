@@ -13,6 +13,7 @@
             </sends>
             <accepts>
                 <cmd id="QUERY" />
+                <cmd id="QUERY_ALL" />
                 <cmd id="DISCOVER" />
                 <cmd id="UPDATE_PROFILE" />
             </accepts>
@@ -30,6 +31,8 @@
             <accepts>
                 <cmd id="DON" />
                 <cmd id="DOF" />
+                <cmd id="QUERY" />
+                <cmd id="QUERY_ALL" />
             </accepts>
         </cmds>
     </nodeDef>
@@ -49,6 +52,8 @@
             <accepts>
                 <cmd id="DON" />
                 <cmd id="DOF" />
+                <cmd id="QUERY" />
+                <cmd id="QUERY_ALL" />
             </accepts>
         </cmds>
     </nodeDef>
@@ -63,7 +68,8 @@
             <accepts>
                 <cmd id="DON" />
                 <cmd id="DOF" />
-            </accepts>
+                <cmd id="QUERY" />
+           </accepts>
         </cmds>
     </nodeDef>
 
@@ -81,6 +87,7 @@
             <accepts>
                 <cmd id="DON" />
                 <cmd id="DOF" />
+                <cmd id="QUERY" />
             </accepts>
         </cmds>
     </nodeDef>
@@ -97,6 +104,7 @@
             <accepts>
                 <cmd id="DON" />
                 <cmd id="DOF" />
+                <cmd id="QUERY" />
             </accepts>
         </cmds>
     </nodeDef>
@@ -117,6 +125,7 @@
             <accepts>
                 <cmd id="DON" />
                 <cmd id="DOF" />
+                <cmd id="QUERY" />
             </accepts>
         </cmds>
     </nodeDef>
@@ -137,6 +146,7 @@
                 </cmd>
                 <cmd id="DON" />
                 <cmd id="DOF" />
+                <cmd id="QUERY" />
             </accepts>
         </cmds>
     </nodeDef>
@@ -161,6 +171,7 @@
                 </cmd>
                 <cmd id="DON" />
                 <cmd id="DOF" />
+                <cmd id="QUERY" />
             </accepts>
         </cmds>
     </nodeDef>
@@ -184,6 +195,7 @@
                 <cmd id="SET_BRI">
                     <p id="" editor="HCLBRI" init="GV5" />
                 </cmd>
+                <cmd id="QUERY" />
             </accepts>
         </cmds>
     </nodeDef>
@@ -208,6 +220,7 @@
                 </cmd>
                 <cmd id="DON" />
                 <cmd id="DOF" />
+                <cmd id="QUERY" />
             </accepts>
         </cmds>
     </nodeDef>
@@ -224,6 +237,7 @@
             <accepts>
                 <cmd id="DON" />
                 <cmd id="DOF" />
+                <cmd id="QUERY" />
             </accepts>
         </cmds>
     </nodeDef>
@@ -244,6 +258,7 @@
                 </cmd>
                 <cmd id="DON" />
                 <cmd id="DOF" />
+                <cmd id="QUERY" />
             </accepts>
         </cmds>
     </nodeDef>
@@ -265,6 +280,7 @@
                 </cmd>
                 <cmd id="DON" />
                 <cmd id="DOF" />
+                <cmd id="QUERY" />
             </accepts>
         </cmds>
     </nodeDef>
@@ -287,6 +303,7 @@
                 </cmd>
                 <cmd id="DON" />
                 <cmd id="DOF" />
+                <cmd id="QUERY" />
             </accepts>
         </cmds>
     </nodeDef>
@@ -371,6 +388,7 @@
                 <cmd id="SET_EFFECT">
                     <p id="" editor="HESEL" />
                 </cmd>-->
+                <cmd id="QUERY" />
             </accepts>
         </cmds>
     </nodeDef>
@@ -423,6 +441,7 @@
                 <cmd id="SET_ALERT">
                     <p id="" editor="HASEL" />
                 </cmd> -->
+                <cmd id="QUERY" />
             </accepts>
         </cmds>
     </nodeDef>
@@ -487,6 +506,7 @@
                 <cmd id="SET_ALERT">
                     <p id="" editor="HASEL" />
                 </cmd> -->
+                <cmd id="QUERY" />
             </accepts>
         </cmds>
     </nodeDef>
@@ -571,6 +591,7 @@
                 <cmd id="SET_EFFECT">
                     <p id="" editor="HESEL" />
                 </cmd>-->
+                <cmd id="QUERY" />
             </accepts>
         </cmds>
     </nodeDef>

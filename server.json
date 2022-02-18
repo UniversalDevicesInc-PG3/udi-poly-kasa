@@ -12,7 +12,7 @@
     "cloud": false,
     "prem": true,
     "discover": true,
-    "profile_version": "3.0.6",
+    "profile_version": "3.0.7",
     "credits": [
         {
             "title": "Kasa: a NodeServer for ISY and TP-Link Kasa Integration",

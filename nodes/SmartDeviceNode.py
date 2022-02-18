@@ -45,7 +45,7 @@ class SmartDeviceNode(Node):
 
     def query(self):
         LOGGER.info(f'{self.pfx} enter')
-        fut = asyncio.run_coroutine_threadsafe(self.update_and_set_state_a(), self.controller.mainloop)
+        fut = asyncio.run_coroutine_threadsafe(self.set_state_a(), self.controller.mainloop)
         res = fut.result()
         LOGGER.info(f'{self.pfx} res={res}')
         self.reportDrivers()
@@ -109,6 +109,7 @@ class SmartDeviceNode(Node):
     async def set_on_a(self):
         LOGGER.debug(f'{self.pfx} enter')
         await self.dev.turn_on()
+        self.setDriver('ST',100)
         await self.set_state_a(set_energy=True)
         LOGGER.debug(f'{self.pfx} exit')
 
@@ -122,6 +123,7 @@ class SmartDeviceNode(Node):
     async def set_off_a(self):
         LOGGER.debug(f'{self.pfx} enter')
         await self.dev.turn_off()
+        self.setDriver('ST',0)
         await self.set_state_a(set_energy=True)
         LOGGER.debug(f'{self.pfx} exit')
 
@@ -131,10 +133,6 @@ class SmartDeviceNode(Node):
         fut = asyncio.run_coroutine_threadsafe(self.update_a(), self.controller.mainloop)
         res = fut.result()
         LOGGER.debug(f'exit:{res} {self.name} dev={self.dev}')
-
-    async def update_and_set_state_a(self):
-        await self.update_a()
-        await self.set_state_a()
 
     async def update_a(self):
         LOGGER.debug(f'enter: {self.name} dev={self.dev}')
@@ -192,6 +190,9 @@ class SmartDeviceNode(Node):
             if set_energy:
                 await self._set_energy_a()
         LOGGER.debug(f'exit:  dev={self.dev}')
+
+    def is_on(self):
+        return self.dev.is_on
 
     # Called by set_state when device is alive, does nothing by default, enheritance may override
     def set_all_drivers(self):
