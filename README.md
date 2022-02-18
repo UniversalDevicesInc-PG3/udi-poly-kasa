@@ -127,7 +127,7 @@ Restart the Kasa nodeserver by selecting it in the Polyglot dashboard and select
 - 3.0.8: 02/1=7/2022
   - query on controller only queries controller not all nodes
     - Use new Query All command instead
-   
+  - [Fix Status for multiplug devices](https://github.com/UniversalDevicesInc-PG3/udi-poly-kasa/issues/3)
 - 3.0.7: 12/14/2021
   - Added conn_status to Controller so ST is properly set
     - Existing users will need to delete the controller node in the Polyglot UI and restart the NS
