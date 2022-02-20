@@ -187,15 +187,14 @@
         <cmds>
             <sends />
             <accepts>
+                <cmd id="QUERY" />
                 <cmd id="BRT" />
                 <cmd id="DIM" />
-                <cmd id="QUERY" />
                 <cmd id="DON" />
                 <cmd id="DOF" />
                 <cmd id="SET_BRI">
                     <p id="" editor="HCLBRI" init="GV5" />
                 </cmd>
-                <cmd id="QUERY" />
             </accepts>
         </cmds>
     </nodeDef>
@@ -215,12 +214,12 @@
         <cmds>
             <sends />
             <accepts>
+                <cmd id="QUERY" />
                 <cmd id="BRI">
                     <p id="" editor="bri" init="GV5" />
                 </cmd>
                 <cmd id="DON" />
                 <cmd id="DOF" />
-                <cmd id="QUERY" />
             </accepts>
         </cmds>
     </nodeDef>
@@ -235,9 +234,9 @@
         <cmds>
             <sends />
             <accepts>
+                <cmd id="QUERY" />
                 <cmd id="DON" />
                 <cmd id="DOF" />
-                <cmd id="QUERY" />
             </accepts>
         </cmds>
     </nodeDef>
@@ -253,12 +252,12 @@
         <cmds>
             <sends />
             <accepts>
+                <cmd id="QUERY" />
                 <cmd id="BRI">
                     <p id="" editor="bri" init="GV5" />
                 </cmd>
                 <cmd id="DON" />
                 <cmd id="DOF" />
-                <cmd id="QUERY" />
             </accepts>
         </cmds>
     </nodeDef>
@@ -275,12 +274,12 @@
         <cmds>
             <sends />
             <accepts>
+                <cmd id="QUERY" />
                 <cmd id="BRI">
                     <p id="" editor="bri" init="GV5" />
                 </cmd>
                 <cmd id="DON" />
                 <cmd id="DOF" />
-                <cmd id="QUERY" />
             </accepts>
         </cmds>
     </nodeDef>
@@ -298,12 +297,12 @@
         <cmds>
             <sends />
             <accepts>
+                <cmd id="QUERY" />
                 <cmd id="BRI">
                     <p id="" editor="bri" init="GV5" />
                 </cmd>
                 <cmd id="DON" />
                 <cmd id="DOF" />
-                <cmd id="QUERY" />
             </accepts>
         </cmds>
     </nodeDef>
@@ -330,6 +329,7 @@
                 <cmd id="DOF" />
             </sends>
             <accepts>
+                <cmd id="QUERY" />
                 <cmd id="DON" />
                 <cmd id="DOF" />
                 <cmd id="DFON" />
@@ -339,7 +339,6 @@
                 <cmd id="FDUP" />
                 <cmd id="FDDOWN" />
                 <cmd id="FDSTOP" />
-                <cmd id="QUERY" />
                 <cmd id="SET_COLOR">
                     <p id="" editor="HCSEL" />
                 </cmd>
@@ -388,7 +387,6 @@
                 <cmd id="SET_EFFECT">
                     <p id="" editor="HESEL" />
                 </cmd>-->
-                <cmd id="QUERY" />
             </accepts>
         </cmds>
     </nodeDef>
@@ -414,6 +412,7 @@
                 <cmd id="DOF" />
             </sends>
             <accepts>
+                <cmd id="QUERY" />
                 <cmd id="DON" />
                 <cmd id="DOF" />
                 <cmd id="DFON" />
@@ -423,7 +422,6 @@
                 <cmd id="FDUP" />
                 <cmd id="FDDOWN" />
                 <cmd id="FDSTOP" />
-                <cmd id="QUERY" />
                 <cmd id="SET_BRI">
                     <p id="" editor="HCLBRI" init="GV5" />
                 </cmd>
@@ -441,7 +439,6 @@
                 <cmd id="SET_ALERT">
                     <p id="" editor="HASEL" />
                 </cmd> -->
-                <cmd id="QUERY" />
             </accepts>
         </cmds>
     </nodeDef>
@@ -487,6 +484,7 @@
                 <cmd id="DOF" />
             </sends>
             <accepts>
+                <cmd id="QUERY" />
                 <cmd id="DON" />
                 <cmd id="DOF" />
                 <cmd id="DFON" />
@@ -496,7 +494,6 @@
                 <cmd id="FDUP" />
                 <cmd id="FDDOWN" />
                 <cmd id="FDSTOP" />
-                <cmd id="QUERY" />
                 <cmd id="SET_BRI">
                     <p id="" editor="HCLBRI" init="GV5" />
                 </cmd>
@@ -506,7 +503,6 @@
                 <cmd id="SET_ALERT">
                     <p id="" editor="HASEL" />
                 </cmd> -->
-                <cmd id="QUERY" />
             </accepts>
         </cmds>
     </nodeDef>
@@ -533,6 +529,7 @@
                 <cmd id="DOF" />
             </sends>
             <accepts>
+                <cmd id="QUERY" />
                 <cmd id="DON" />
                 <cmd id="DOF" />
                 <cmd id="DFON" />
@@ -542,7 +539,6 @@
                 <cmd id="FDUP" />
                 <cmd id="FDDOWN" />
                 <cmd id="FDSTOP" />
-                <cmd id="QUERY" />
                 <cmd id="SET_COLOR">
                     <p id="" editor="HCSEL" />
                 </cmd>
@@ -591,7 +587,6 @@
                 <cmd id="SET_EFFECT">
                     <p id="" editor="HESEL" />
                 </cmd>-->
-                <cmd id="QUERY" />
             </accepts>
         </cmds>
     </nodeDef>

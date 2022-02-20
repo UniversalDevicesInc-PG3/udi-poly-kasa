@@ -124,7 +124,9 @@ If you have an issue where the nodes are not showing up properly, open the Polyg
 Restart the Kasa nodeserver by selecting it in the Polyglot dashboard and select Control -> Restart, then watch the log to make sure everything goes well.
 
 # Release Notes
-- 3.0.8: 02/1=7/2022
+- 3.0.9: 02/20/2022
+  - Profile fixes
+- 3.0.8: 02/17/2022
   - query on controller only queries controller not all nodes
     - Use new Query All command instead
   - [Fix Status for multiplug devices](https://github.com/UniversalDevicesInc-PG3/udi-poly-kasa/issues/3)

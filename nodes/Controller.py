@@ -368,7 +368,7 @@ class Controller(Node):
 
     def update_profile(self):
         LOGGER.info('start')
-        st = self.poly.installprofile()
+        st = self.poly.updateProfile()
         return st
 
     def _cmd_query_all(self,command):
