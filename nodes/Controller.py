@@ -2,7 +2,7 @@
 from udi_interface import Node,LOGGER,Custom,LOG_HANDLER
 import logging,re,json,sys,asyncio
 from threading import Thread,Event
-from node_funcs import get_valid_node_name
+from node_funcs import get_valid_node_name,get_valid_node_address
 #sys.path.insert(0,"pyHS100")
 #from pyHS100 import Discover
 from kasa import Discover
@@ -291,7 +291,7 @@ class Controller(Node):
             else:
                 naddress = "{}{:02d}".format(mac,address_suffix_num)
             LOGGER.info(f"Got a {type}")
-            cfg  = { "type": type, "name": name, "host": dev.host, "mac": mac, "model": dev.model, "address": get_valid_node_name(naddress)}
+            cfg  = { "type": type, "name": get_valid_node_name(name), "host": dev.host, "mac": mac, "model": dev.model, "address": get_valid_node_address(naddress)}
         elif cfg is None:
             LOGGER.error(f"INTERNAL ERROR: dev={dev} and cfg={cfg}")
             return False

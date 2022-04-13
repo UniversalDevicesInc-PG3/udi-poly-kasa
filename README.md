@@ -124,6 +124,11 @@ If you have an issue where the nodes are not showing up properly, open the Polyg
 Restart the Kasa nodeserver by selecting it in the Polyglot dashboard and select Control -> Restart, then watch the log to make sure everything goes well.
 
 # Release Notes
+- 3.0.10: 04/13/2022
+  - Fixed: [Add support for KL420L5](https://github.com/UniversalDevicesInc-PG3/udi-poly-kasa/issues/7)
+    - Although can't be sure until user confirms since I don't have one
+  - Fixed: [add_node should remove bad characters from node names](https://github.com/UniversalDevicesInc-PG3/udi-poly-kasa/issues/4)
+  - Fixed: [Set power numbers when device is off](https://github.com/UniversalDevicesInc-PG3/udi-poly-kasa/issues/6)
 - 3.0.9: 02/20/2022
   - Profile fixes
 - 3.0.8: 02/17/2022
