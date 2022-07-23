@@ -87,12 +87,14 @@ class SmartStripNode(SmartDeviceNode):
 
     def set_on(self):
         LOGGER.debug(f'enter: {self.dev}')
+        LOGGER.debug(f'{self.pfx} setDriver(ST,100)')
         self.setDriver('ST', 100)
         self.st = True
         LOGGER.debug(f'exit: {self.dev}')
 
     def set_off(self):
         LOGGER.debug(f'enter: {self.dev}')
+        LOGGER.debug(f'{self.pfx} setDriver(ST,0)')
         self.setDriver('ST', 0)
         self.st = False
         LOGGER.debug(f'exit: {self.dev}')

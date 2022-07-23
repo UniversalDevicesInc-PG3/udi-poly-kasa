@@ -109,6 +109,7 @@ class SmartDeviceNode(Node):
     async def set_on_a(self):
         LOGGER.debug(f'{self.pfx} enter')
         await self.dev.turn_on()
+        LOGGER.debug(f'{self.pfx} setDriver(ST,100)')
         self.setDriver('ST',100)
         await self.set_state_a(set_energy=True)
         LOGGER.debug(f'{self.pfx} exit')
@@ -123,6 +124,7 @@ class SmartDeviceNode(Node):
     async def set_off_a(self):
         LOGGER.debug(f'{self.pfx} enter')
         await self.dev.turn_off()
+        LOGGER.debug(f'{self.pfx} setDriver(ST,0)')
         self.setDriver('ST',0)
         await self.set_state_a(set_energy=True)
         LOGGER.debug(f'{self.pfx} exit')
@@ -156,7 +158,7 @@ class SmartDeviceNode(Node):
         return False
 
     async def set_state_a(self,set_energy=True):
-        LOGGER.debug(f'enter: dev={self.dev}')
+        LOGGER.debug(f'{self.pfx} enter: dev={self.dev}')
         # This doesn't call set_energy, since that is only called on long_poll's
         # We don't use self.connected here because dev might be good, but device is unplugged
         # So then when it's plugged back in the same dev will still work
@@ -165,13 +167,16 @@ class SmartDeviceNode(Node):
             if self.dev.is_on is True:
                 if self.dev.is_dimmable:
                     self.brightness = st2bri(self.dev.brightness)
+                    LOGGER.debug(f'{self.pfx} setDriver(ST,{self.dev.brightness})')
                     self.setDriver('ST',self.dev.brightness)
                     self.setDriver('GV5',int(st2bri(self.dev.brightness)))
                 else:
                     self.brightness = 100
+                    LOGGER.debug(f'{self.pfx} setDriver(ST,100)')
                     self.setDriver('ST',100)
             else:
                 self.brightness = 0
+                LOGGER.debug(f'{self.pfx} setDriver(ST,0)')
                 self.setDriver('ST',0)
             if self.dev.is_color:
                 hsv = self.dev.hsv
@@ -189,7 +194,7 @@ class SmartDeviceNode(Node):
                     LOGGER.error(f'{self.pfx} set_all_drivers failed: {ex}',exc_info=True)
             if set_energy:
                 await self._set_energy_a()
-        LOGGER.debug(f'exit:  dev={self.dev}')
+        LOGGER.debug(f'{self.pfx} exit:  dev={self.dev}')
 
     def is_on(self):
         return self.dev.is_on

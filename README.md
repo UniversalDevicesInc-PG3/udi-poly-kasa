@@ -124,6 +124,8 @@ If you have an issue where the nodes are not showing up properly, open the Polyg
 Restart the Kasa nodeserver by selecting it in the Polyglot dashboard and select Control -> Restart, then watch the log to make sure everything goes well.
 
 # Release Notes
+- 3.0.11: 07/23/2022
+  - Add debugging for: [SmartStripPlugNode not retrieving proper status](https://github.com/UniversalDevicesInc-PG3/udi-poly-kasa/issues/8)
 - 3.0.10: 04/13/2022
   - Fixed: [Add support for KL420L5](https://github.com/UniversalDevicesInc-PG3/udi-poly-kasa/issues/7)
     - Although can't be sure until user confirms since I don't have one

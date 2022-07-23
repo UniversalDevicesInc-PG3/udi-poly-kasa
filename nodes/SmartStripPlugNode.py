@@ -48,11 +48,14 @@ class SmartStripPlugNode(SmartDeviceNode):
         # We don't use self.connected here because dev might be good, but device is unplugged
         # So then when it's plugged back in the same dev will still work
         if await self.primary_node.update_a():
+            LOGGER.debug(f'after parent update: dev={self.dev}')
             if self.dev.is_on is True:
                 self.brightness = 100
+                LOGGER.debug(f'{self.pfx} setDriver(ST,100)')
                 self.setDriver('ST',100)
             else:
                 self.brightness = 0
+                LOGGER.debug(f'{self.pfx} setDriver(ST,0)')
                 self.setDriver('ST',0)
 
             if set_energy:
