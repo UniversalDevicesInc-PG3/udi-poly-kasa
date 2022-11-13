@@ -32,16 +32,8 @@ class SmartStripNode(SmartDeviceNode):
     def handler_start(self):
         LOGGER.debug(f'{self.pfx} enter:')
         super(SmartStripNode, self).handler_start()
-        LOGGER.info(f'{self.pfx} {self.dev.alias} has {len(self.dev.children)+1} children')
-        for pnum in range(len(self.dev.children)):
-            naddress = "{}{:02d}".format(self.address,pnum+1)
-            nname    = self.dev.children[pnum].alias
-            LOGGER.info(f"{self.pfx} adding plug num={pnum} address={naddress} name={nname}")
-            node = self.controller.add_node(parent=self, address_suffix_num=pnum+1, dev=self.dev.children[pnum])
-            if node is False:
-                LOGGER.error(f'{self.pfx} Failed to add node num={pnum} address={naddress} name={nname}')
-            else:
-                self.child_nodes.append(node)
+        if self.is_connected():
+            self.add_children()
         self.ready = True
         LOGGER.debug(f'{self.pfx} exit')
 
@@ -53,21 +45,36 @@ class SmartStripNode(SmartDeviceNode):
         # This doesn't call set_energy, since that is only called on long_poll's
         # We don't use self.connected here because dev might be good, but device is unplugged
         # So then when it's plugged back in the same dev will still work
+        ocon = self.connected
         if await self.update_a():
-            ocon = self.connected
-
-            # We dont update children since that forces an update on myself each time
-            self.set_st_from_children()
 
             # On restore, or initial startup, set all drivers.
             if not ocon and self.connected:
+                LOGGER.debug(f'initial or reconnected')
+                self.add_children()
                 try:
                     self.set_all_drivers()
                 except Exception as ex:
                     LOGGER.error(f'{self.pfx} set_all_drivers failed: {ex}',exc_info=True)
             if set_energy:
                 await self._set_energy_a()
+
+            # We dont update children since that forces an update on myself each time
+            self.set_st_from_children()
+
         LOGGER.debug(f'exit:  dev={self.dev}')
+
+    def add_children(self):
+        LOGGER.info(f'{self.pfx} {self.dev.alias} has {len(self.dev.children)+1} children')
+        for pnum in range(len(self.dev.children)):
+            naddress = "{}{:02d}".format(self.address,pnum+1)
+            nname    = self.dev.children[pnum].alias
+            LOGGER.info(f"{self.pfx} adding plug num={pnum} address={naddress} name={nname}")
+            node = self.controller.add_node(parent=self, address_suffix_num=pnum+1, dev=self.dev.children[pnum])
+            if node is False:
+                LOGGER.error(f'{self.pfx} Failed to add node num={pnum} address={naddress} name={nname}')
+            else:
+                self.child_nodes.append(node)
 
     # Set my ST based on the children's current ST
     # This is called by the child when their ST changes.

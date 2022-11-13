@@ -98,7 +98,7 @@ class SmartDeviceNode(Node):
                 LOGGER.error(f"{self.pfx} Unknown excption connecting to device '{self.name}' {self.host} will try again later", exc_info=True)
                 self.set_connected(False)
         LOGGER.debug(f'exit:{self.connected} {self.name} dev={self.dev}')
-        return self.is_connected
+        return self.is_connected()
 
     def set_on(self):
         LOGGER.debug(f'{self.pfx} enter')
@@ -162,8 +162,8 @@ class SmartDeviceNode(Node):
         # This doesn't call set_energy, since that is only called on long_poll's
         # We don't use self.connected here because dev might be good, but device is unplugged
         # So then when it's plugged back in the same dev will still work
+        ocon = self.connected
         if await self.update_a():
-            ocon = self.connected
             if self.dev.is_on is True:
                 if self.dev.is_dimmable:
                     self.brightness = st2bri(self.dev.brightness)

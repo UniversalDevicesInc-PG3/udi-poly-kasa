@@ -1,6 +1,6 @@
 
 from udi_interface import Node,LOGGER,Custom,LOG_HANDLER
-import logging,re,json,sys,asyncio
+import logging,re,json,sys,asyncio,time
 from threading import Thread,Event
 from node_funcs import get_valid_node_name,get_valid_node_address
 #sys.path.insert(0,"pyHS100")
@@ -36,10 +36,15 @@ class Controller(Node):
         self.in_long_poll  = False
         self.Notices         = Custom(self.poly, 'notices')
         self.Parameters      = Custom(self.poly, 'customparams')
+        self.handler_params_st = None
+        self.Data            = Custom(self.poly, 'customdata')
+        self.handler_data_st = None
         self.poly.subscribe(self.poly.START,                  self.handler_start, address) 
         self.poly.subscribe(self.poly.POLL,                   self.handler_poll)
         self.poly.subscribe(self.poly.LOGLEVEL,               self.handler_log_level)
         self.poly.subscribe(self.poly.CONFIGDONE,             self.handler_config_done)
+        self.poly.subscribe(self.poly.CUSTOMPARAMS,           self.handler_params)
+        self.poly.subscribe(self.poly.CUSTOMDATA,             self.handler_data)
         self.poly.subscribe(self.poly.DISCOVER,               self.discover_new)
         self.poly.ready()
         self.poly.addNode(self, conn_status='ST')
@@ -54,6 +59,18 @@ class Controller(Node):
         self.setDriver('ST', 1)
         self.heartbeat()
         self.check_params()
+        #
+        # Wait for all handlers to finish
+        #
+        cnt = 600
+        while ((self.handler_params_st is None or self.handler_data_st is None) and cnt > 0):
+            LOGGER.warning(f'Waiting for all to be loaded params={self.handler_params_st} data={self.handler_data_st}... cnt={cnt}')
+            time.sleep(1)
+            cnt -= 1
+        if cnt == 0:
+            LOGGER.error("Timed out waiting for handlers to startup")
+            #self.exit()
+        # Discover
         try:
             self.discover()
         except:
@@ -62,7 +79,7 @@ class Controller(Node):
         self.ready = True
         LOGGER.info(f'exit {self.name}')
 
-    # For things we only do have the configuration is loaded...
+    # For things we only do when have the configuration is loaded...
     def handler_config_done(self):
         LOGGER.debug(f'enter')
         self.poly.addLogLevel('DEBUG_MODULES',9,'Debug + Modules')
@@ -166,9 +183,9 @@ class Controller(Node):
                         all_connected = False
                 except:
                     pass # in case node doesn't have a longPoll method
-        if not all_connected:
-            LOGGER.warning("Not all devices are connected, running discover to check for them")
-            await self._discover_new_a()
+        #if not all_connected:
+        #    LOGGER.warning("Not all devices are connected, running discover to check for them")
+        await self._discover_new_a()
         self.in_long_poll = False
         LOGGER.debug('exit')
 
@@ -208,10 +225,12 @@ class Controller(Node):
         await Discover.discover(timeout=10,discovery_packets=10,target=self.poly.network_interface['broadcast'],on_discovered=self.discover_add_device)
         # make sure all we know about are added in case they didn't respond this time.
         LOGGER.info(f"Discover.discover done: checking for previously known devices")
-        for mac in self.Parameters:
+        for mac in self.Data:
             LOGGER.debug(f'checking mac={mac}')
             if self.smac(mac) in self.devm:
                 LOGGER.debug(f'already added mac={mac}')
+                # Check for a name change.
+
             else:
                 cfg = self.get_device_cfg(mac)
                 LOGGER.debug(f'cfg={cfg}')
@@ -228,8 +247,10 @@ class Controller(Node):
         LOGGER.debug(f'dev={dev}')
         smac = self.smac(dev.mac)
         if smac in self.nodes_by_mac:
-            # Make sure the host matches
             node = self.nodes_by_mac[smac]
+            # See if we need to check for node name changes where Kasa app name is the source
+            self.check_for_rename_node(node.address,node.name)
+            # Make sure the host matches
             if dev.host != node.host:
                 LOGGER.warning(f"Updating '{node.name}' host from {node.host} to {dev.host}")
                 node.host = dev.host
@@ -270,7 +291,7 @@ class Controller(Node):
             elif dev.is_strip:
                 type = 'SmartStrip'
                 # SmartStrip doesn't have an alias so use the mac
-                name = 'SmartStrip {}'.format(mac)
+                name = get_valid_node_name(f'SmartStrip {mac}')
             elif dev.is_plug:
                 type = 'SmartPlug'
                 name = dev.alias
@@ -286,16 +307,21 @@ class Controller(Node):
             else:
                 LOGGER.error(f"What is this? {dev}")
                 return False
-            if address_suffix_num is None:
-                naddress = mac
-            else:
-                naddress = "{}{:02d}".format(mac,address_suffix_num)
             LOGGER.info(f"Got a {type}")
-            cfg  = { "type": type, "name": get_valid_node_name(name), "host": dev.host, "mac": mac, "model": dev.model, "address": get_valid_node_address(naddress)}
-        elif cfg is None:
+            if address_suffix_num is None:
+                address = get_valid_node_address(mac)
+            else:
+                address = get_valid_node_address("{}{:02d}".format(mac,address_suffix_num))
+            # See if we need to check for node name changes where Kasa app name is the source
+            aname = get_valid_node_name(name)
+            aname = self.check_for_rename_node(address,aname)
+            cfg  = { "type": type, "name": aname, "host": dev.host, "mac": mac, "model": dev.model, "address": address}
+        elif cfg is not None:
+            name = cfg['name']
+        else:
             LOGGER.error(f"INTERNAL ERROR: dev={dev} and cfg={cfg}")
             return False
-        LOGGER.info(f"adding {cfg['type']} '{cfg['name']}' {cfg['address']}")
+        LOGGER.info(f"adding type={cfg['type']} address={cfg['address']} name='{cfg['name']}' ")
         #
         # Add Based on device type.  SmartStrip is a unique type, all others
         # are handled by SmartDevice
@@ -316,6 +342,8 @@ class Controller(Node):
         else:
             LOGGER.error(f"Device type not yet supported: {cfg['type']}")
             return False
+        # Now that node is added, change name if requested
+        self.check_for_rename_node(cfg['address'],name)
         # We always add it to update the host if necessary
         node = self.poly.getNode(cfg['address'])
         if node is None:
@@ -325,20 +353,47 @@ class Controller(Node):
         LOGGER.debug(f'exit: dev={dev}')
         return node
 
+    def check_for_rename_node(self,address,name):
+        # First see if it's an existing node
+        node = self.poly.getNode(address)
+        LOGGER.debug(f'getNode({address})={node}')
+        if node is None:
+            cname = self.poly.getNodeNameFromDb(address)
+            LOGGER.debug(f'getNodeNameFromDb({address})={cname}')
+            # Current interface doesn't work to change name before added, so just return the current name and change it later
+            return cname
+        else:
+            cname = node.name
+            LOGGER.debug(f'getNode({address})={node} name={cname}')
+        if cname is not None:
+            LOGGER.debug(f"node {address} Requested: '{name}' Current: '{cname}'")
+            # Check that the name matches
+            if name != cname:
+                if self.Parameters['change_node_names'] == 'true':
+                    LOGGER.warning(f"Existing node name '{cname}' for {address} does not match requested name '{name}', changing to match")
+                    self.poly.renameNode(address,name)
+                else:
+                    LOGGER.warning(f"Existing node name '{cname}' for {address} does not match requested name '{name}', NOT changing to match, set change_node_names=true to enable")
+                    # Change it to existing name to avoid addNode error
+                    name = cname
+        LOGGER.debug(f'returning: {name}')
+        return name
+
     def smac(self,mac):
         return re.sub(r'[:]+', '', mac)
 
     def exist_device_param(self,mac):
-        cparams = self.polyConfig['customParams']
-        return True if self.smac(mac) in cparams else False
+        return True if self.smac(mac) in self.Data else False
 
     def save_cfg(self,cfg):
-        LOGGER.debug(f'Saving config: {cfg}')
-        js = json.dumps(cfg)
-        self.Parameters[self.smac(cfg['mac'])] = js
+        mac = self.smac(cfg['mac'])
+        LOGGER.debug(f'Saving config for mac: {mac}: {cfg}')
+        self.Data[mac] = json.dumps(cfg)
 
     def get_device_cfg(self,mac):
-        cfg = self.polyConfig['customParams'][self.smac(mac)]
+        return(self.cfg_to_dict(self.Data[self.smac(mac)]))
+ 
+    def cfg_to_dict(self,cfg):
         try:
             cfgd = json.loads(cfg)
         except:
@@ -346,6 +401,51 @@ class Controller(Node):
             LOGGER.error(f'failed to parse cfg={cfg} Error: {err}')
             return None
         return cfgd
+
+    def handler_data(self,data):
+        LOGGER.debug(f'enter: Loading data {data}')
+        if data is None:
+            LOGGER.warning("No custom data")
+        else:
+            self.Data.load(data)
+        self.handler_data_st = True
+
+    def handler_params(self,params):
+        LOGGER.debug(f'enter: Loading typed data now {params}')
+        self.Parameters.load(params)
+        self.poly.Notices.clear()
+        #
+        # Make sure params exist
+        #
+        defaults = {
+            "change_node_names": "false"
+        }
+        for param in defaults:
+            if not param in params:
+                self.Parameters[param] = defaults[param]
+                return
+        #
+        # Move Old Params with just the mac to Data
+        # Wait for data to be loaded.
+        #
+        cnt = 300
+        while ((self.handler_data_st is None) and cnt > 0):
+            LOGGER.warning(f'Waiting for Data to be loaded data={self.handler_data_st}... cnt={cnt}')
+            time.sleep(1)
+            cnt -= 1
+        if cnt == 0:
+            LOGGER.error("Timed out waiting for data to be loaded")
+            #self.exit()
+
+        for param in self.Parameters:
+            if not (param in defaults):
+                data = self.Parameters[param]
+                LOGGER.debug(f'Transfering from parms to data: {data}')
+                self.save_cfg(self.cfg_to_dict(data))
+                self.Parameters.delete(param)
+                return
+        #self.check_params()
+        self.handler_params_st = True
 
     def handler_log_level(self,level):
         LOGGER.info(f'enter: level={level}')

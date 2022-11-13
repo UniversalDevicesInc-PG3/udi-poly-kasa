@@ -50,6 +50,13 @@ This node server makes every attempt to handle devices which are not responding 
 
 The node server does not require that you reserve IP addresses for the devices, the device address is remembered based on it's MAC address, so if the IP address changes, it will be properly handled. (This has not been extensively tested, needs more verification)
 
+### Configuration Parameters
+
+#### change_node_names
+
+This defaults to false, changing to true will change node names to match what is configured in Kasa app on restart or long poll.
+Note, there is currently a bug in PG3 so renames during long poll are not working, you must restart the node server.
+
 ## Kasa Devices
 
 ### Known working
@@ -124,6 +131,8 @@ If you have an issue where the nodes are not showing up properly, open the Polyg
 Restart the Kasa nodeserver by selecting it in the Polyglot dashboard and select Control -> Restart, then watch the log to make sure everything goes well.
 
 # Release Notes
+- 3.0.12: 11/12/2022
+  - Fixed [SmartStripPlugNode not retrieving proper status](https://github.com/UniversalDevicesInc-PG3/udi-poly-kasa/issues/8)
 - 3.0.11: 07/23/2022
   - Add debugging for: [SmartStripPlugNode not retrieving proper status](https://github.com/UniversalDevicesInc-PG3/udi-poly-kasa/issues/8)
 - 3.0.10: 04/13/2022
