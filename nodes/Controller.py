@@ -125,11 +125,18 @@ class Controller(Node):
         
     async def _shortPoll_a(self):
         LOGGER.debug('enter')
+        nodes = []
         for node_address in self.poly.getNodes():
+            nodes.append(node_address)
+        for node_address in nodes:
+            LOGGER.debug(f'check: node_address={node_address}')
             node = self.poly.getNode(node_address)
-            LOGGER.debug(f'node.address={node.address} node.name={node.name} ')
+            LOGGER.debug(f'check: node.address={node.address} node.name={node.name} ')
             if node.poll:
                 await node.shortPoll()
+                LOGGER.debug(f'done: node.address={node.address} node.name={node.name} ')
+            LOGGER.debug('here')
+        LOGGER.debug('loop done')
         self.in_short_poll = False
         LOGGER.debug('exit')
 
@@ -241,11 +248,11 @@ class Controller(Node):
         return True
 
     async def discover_new_add_device(self,dev):
-        LOGGER.debug(f'enter: dev={dev}')
+        smac = self.smac(dev.mac)
+        LOGGER.debug(f'enter: mac={smac} dev={dev}')
         # Known Device?
         await dev.update()
-        LOGGER.debug(f'dev={dev}')
-        smac = self.smac(dev.mac)
+        LOGGER.debug(f'mac={smac} dev={dev}')
         if smac in self.nodes_by_mac:
             node = self.nodes_by_mac[smac]
             # See if we need to check for node name changes where Kasa app name is the source
@@ -254,7 +261,7 @@ class Controller(Node):
             if dev.host != node.host:
                 LOGGER.warning(f"Updating '{node.name}' host from {node.host} to {dev.host}")
                 node.host = dev.host
-                node.connect()
+                await node.connect_a()
             else:
                 LOGGER.info(f"Connected:{node.is_connected()} '{node.name}'")
                 if not node.is_connected():
@@ -262,7 +269,7 @@ class Controller(Node):
                     LOGGER.warning(f"Connected:{node.is_connected()} '{node.name}' host is {node.host} same as {dev.host}")
                     await node.connect_a()
         else:
-            LOGGER.warning(f'Found a new device, adding it... {dev.alias}')
+            LOGGER.warning(f'Found a new device {dev.mac}, adding {dev.alias}')
             self.add_node(dev=dev)
 
     def discover_new(self):
@@ -356,17 +363,17 @@ class Controller(Node):
     def check_for_rename_node(self,address,name):
         # First see if it's an existing node
         node = self.poly.getNode(address)
-        LOGGER.debug(f'getNode({address})={node}')
+        #LOGGER.debug(f'getNode({address})={node}')
         if node is None:
             cname = self.poly.getNodeNameFromDb(address)
-            LOGGER.debug(f'getNodeNameFromDb({address})={cname}')
+            #LOGGER.debug(f'getNodeNameFromDb({address})={cname}')
             # Current interface doesn't work to change name before added, so just return the current name and change it later
             return cname
         else:
             cname = node.name
-            LOGGER.debug(f'getNode({address})={node} name={cname}')
+            #LOGGER.debug(f'getNode({address})={node} name={cname}')
         if cname is not None:
-            LOGGER.debug(f"node {address} Requested: '{name}' Current: '{cname}'")
+            #LOGGER.debug(f"node {address} Requested: '{name}' Current: '{cname}'")
             # Check that the name matches
             if name != cname:
                 if self.Parameters['change_node_names'] == 'true':
@@ -376,7 +383,7 @@ class Controller(Node):
                     LOGGER.warning(f"Existing node name '{cname}' for {address} does not match requested name '{name}', NOT changing to match, set change_node_names=true to enable")
                     # Change it to existing name to avoid addNode error
                     name = cname
-        LOGGER.debug(f'returning: {name}')
+        #LOGGER.debug(f'returning: {name}')
         return name
 
     def smac(self,mac):

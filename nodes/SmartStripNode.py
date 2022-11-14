@@ -41,28 +41,24 @@ class SmartStripNode(SmartDeviceNode):
         super().query()
 
     async def set_state_a(self,set_energy=True):
-        LOGGER.debug(f'enter: dev={self.dev}')
-        # This doesn't call set_energy, since that is only called on long_poll's
-        # We don't use self.connected here because dev might be good, but device is unplugged
-        # So then when it's plugged back in the same dev will still work
-        ocon = self.connected
+        LOGGER.debug(f'{self.pfx} enter: dev={self.dev}')
         if await self.update_a():
-
-            # On restore, or initial startup, set all drivers.
-            if not ocon and self.connected:
-                LOGGER.debug(f'initial or reconnected')
-                self.add_children()
-                try:
-                    self.set_all_drivers()
-                except Exception as ex:
-                    LOGGER.error(f'{self.pfx} set_all_drivers failed: {ex}',exc_info=True)
             if set_energy:
                 await self._set_energy_a()
-
             # We dont update children since that forces an update on myself each time
             self.set_st_from_children()
+        LOGGER.debug(f'{self.pfx} exit:  dev={self.dev}')
 
-        LOGGER.debug(f'exit:  dev={self.dev}')
+    # Called when connected is changed from False to True
+    # On initial startup or a reconnect later
+    def reconnected(self):
+        LOGGER.debug(f'{self.pfx} enter: dev={self.dev}')
+        #try:
+        #    self.set_all_drivers()
+        #except Exception as ex:
+        #    LOGGER.error(f'{self.pfx} set_all_drivers failed: {ex}',exc_info=True)
+        self.add_children()
+        LOGGER.debug(f'{self.pfx} exit: dev={self.dev}')
 
     def add_children(self):
         LOGGER.info(f'{self.pfx} {self.dev.alias} has {len(self.dev.children)+1} children')

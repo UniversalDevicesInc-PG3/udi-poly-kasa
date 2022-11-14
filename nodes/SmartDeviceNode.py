@@ -37,7 +37,7 @@ class SmartDeviceNode(Node):
 
     def handler_start(self):
         LOGGER.debug(f'enter: {self.name} dev={self.dev}')
-        fut = asyncio.run_coroutine_threadsafe(self.connect_and_update_a(), self.controller.mainloop)
+        fut = asyncio.run_coroutine_threadsafe(self.connect_a(), self.controller.mainloop)
         res = fut.result()
         LOGGER.debug(f'result:{res} {self.name} dev={self.dev}')
         self.ready = True
@@ -56,13 +56,13 @@ class SmartDeviceNode(Node):
         self.reportDrivers()
 
     async def shortPoll(self):
-        LOGGER.debug(f'enter: {self.name}')
+        LOGGER.debug(f'{self.pfx} enter: {self.name}')
         if not self.ready:
             return
         # Keep trying to connect if possible
         if await self.connect_a():
             await self.set_state_a(set_energy=False)
-        LOGGER.debug(f'exit: {self.name}')
+        LOGGER.debug(f'{self.pfx} exit: {self.name}')
 
     async def longPoll(self):
         if not self.ready:
@@ -73,38 +73,37 @@ class SmartDeviceNode(Node):
         if self.connected:
             await self._set_energy_a(set_energy=True)
 
-    async def connect_and_update_a(self):
-        await self.connect_a()
-        await self.set_state_a()
-
     def connect(self):
         fut = asyncio.run_coroutine_threadsafe(self.connect_a(), self.controller.mainloop)
         return fut.result()
 
     async def connect_a(self):
-        LOGGER.debug(f'enter: {self.name} dev={self.dev}')
+        LOGGER.debug(f'{self.pfx} enter: {self.name} dev={self.dev}')
         if not self.is_connected():
             LOGGER.debug(f'{self.pfx} connected={self.is_connected()}')
             try:
                 self.dev = self.newdev()
                 # We can get a dev, but not really connected, so make sure we are connected.
-                await self.update_a()
-                sys_info = self.dev.sys_info
-                self.set_connected(True)
+                res = await self.update_a()
+                LOGGER.debug(f'{self.pfx} update res={res}')
+                if res:
+                    self.set_connected(True)
+                    LOGGER.debug(f'{self.pfx} calling reconnected')
+                    self.reconnected()
+                else:
+                    LOGGER.error(f"{self.pfx} Unable to update device {self.host} will try again later: res={res}")
             except SmartDeviceException as ex:
-                LOGGER.error(f"{self.pfx} Unable to connect to device '{self.name}' {self.host} will try again later: {ex}")
-                self.set_connected(False)
+                LOGGER.error(f"{self.pfx} Unable to connect to device {self.host} will try again later: {ex}")
             except:
-                LOGGER.error(f"{self.pfx} Unknown excption connecting to device '{self.name}' {self.host} will try again later", exc_info=True)
-                self.set_connected(False)
-        LOGGER.debug(f'exit:{self.connected} {self.name} dev={self.dev}')
+                LOGGER.error(f"{self.pfx} Unknown excption connecting to device {self.host} will try again later", exc_info=True)
+        LOGGER.debug(f'{self.pfx} exit:{self.connected} {self.name} dev={self.dev}')
         return self.is_connected()
 
     def set_on(self):
         LOGGER.debug(f'{self.pfx} enter')
         fut = asyncio.run_coroutine_threadsafe(self.set_on_a(), self.controller.mainloop)
         res = fut.result()
-        LOGGER.debug(f'exit result={res}')
+        LOGGER.debug(f'{self.pfx} exit result={res}')
 
     async def set_on_a(self):
         LOGGER.debug(f'{self.pfx} enter')
@@ -142,6 +141,7 @@ class SmartDeviceNode(Node):
             if self.connected:
                 LOGGER.debug(f"{self.pfx} No device")
                 self.set_connected(False)
+            LOGGER.debug(f'exit:False {self.name} dev={self.dev}')
             return False
         try:
             await self.dev.update()
@@ -186,12 +186,10 @@ class SmartDeviceNode(Node):
             if self.dev.is_variable_color_temp:
                 self.setDriver('CLITEMP',self.dev.color_temp)
 
-            # On restore, or initial startup, set all drivers.
+            # This happens when a device is alive on startup, but later disappears, then comes back.
             if not ocon and self.connected:
-                try:
-                    self.set_all_drivers()
-                except Exception as ex:
-                    LOGGER.error(f'{self.pfx} set_all_drivers failed: {ex}',exc_info=True)
+                LOGGER.debug(f'{self.pfx} calling reconnected')
+                self.reconnected()
             if set_energy:
                 await self._set_energy_a()
         LOGGER.debug(f'{self.pfx} exit:  dev={self.dev}')
@@ -199,7 +197,7 @@ class SmartDeviceNode(Node):
     def is_on(self):
         return self.dev.is_on
 
-    # Called by set_state when device is alive, does nothing by default, enheritance may override
+    # Called by set_state when device is alive, does nothing by default, inheritance may override
     def set_all_drivers(self):
         pass
 
@@ -230,6 +228,14 @@ class SmartDeviceNode(Node):
                 LOGGER.error(f'{self.pfx} failed', exc_info=True)
         else:
             LOGGER.debug(f'{self.pfx} no energy')
+
+    # Called when connected is changed from False to True
+    # On initial startup or a reconnect later
+    def reconnected(self):
+        try:
+            self.set_all_drivers()
+        except Exception as ex:
+            LOGGER.error(f'{self.pfx} set_all_drivers failed: {ex}',exc_info=True)
 
     def set_connected(self,st):
         # Just return if setting to same status
