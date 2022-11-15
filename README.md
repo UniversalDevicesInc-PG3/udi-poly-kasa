@@ -55,7 +55,7 @@ The node server does not require that you reserve IP addresses for the devices, 
 #### change_node_names
 
 This defaults to false, changing to true will change node names to match what is configured in Kasa app on restart or long poll.
-Note, there is currently a bug in PG3 so renames during long poll are not working, you must restart the node server.
+Note: there is currently a bug in PG3 so renames during long poll are not working, you must restart the node server.
 
 ## Kasa Devices
 
@@ -112,6 +112,10 @@ The settings for this node are
   * Status of device, on, off, or brightness.
 #### Connected (GV0)
   * True if device is communicating
+#### Poll Device
+  * If the device is going to be unplugged for a while, set this to False so node server will stop attempting to poll.
+#### Many others
+  * Depending on the type of device there will be many other drivers, which should be self explanitary.
 
 ### Node Commands
 
@@ -131,8 +135,13 @@ If you have an issue where the nodes are not showing up properly, open the Polyg
 Restart the Kasa nodeserver by selecting it in the Polyglot dashboard and select Control -> Restart, then watch the log to make sure everything goes well.
 
 # Release Notes
+- 3.0.13: 11/14/2022
+  - Fixed [Add option to disable polling a device](https://github.com/UniversalDevicesInc-PG3/udi-poly-kasa/issues/11)
+    - If a device is going to be unplugged for a while, set the Poll Device to False.
+  - Also, reworked how polling is done so one device not responding doesn't slow down polling other devices.
 - 3.0.12: 11/12/2022
-  - Fixed [SmartStripPlugNode not retrieving proper status](https://github.com/UniversalDevicesInc-PG3/udi-poly-kasa/issues/8)
+  - Fixed [Add rename nodes option](https://github.com/UniversalDevicesInc-PG3/udi-poly-kasa/issues/10)
+    - See [Configuration Parameters](#configuration-parameters)
 - 3.0.11: 07/23/2022
   - Add debugging for: [SmartStripPlugNode not retrieving proper status](https://github.com/UniversalDevicesInc-PG3/udi-poly-kasa/issues/8)
 - 3.0.10: 04/13/2022

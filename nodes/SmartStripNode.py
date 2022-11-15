@@ -46,6 +46,7 @@ class SmartStripNode(SmartDeviceNode):
             if set_energy:
                 await self._set_energy_a()
             # We dont update children since that forces an update on myself each time
+            await self.set_children_drivers_a(set_energy=set_energy)
             self.set_st_from_children()
         LOGGER.debug(f'{self.pfx} exit:  dev={self.dev}')
 
@@ -72,10 +73,17 @@ class SmartStripNode(SmartDeviceNode):
             else:
                 self.child_nodes.append(node)
 
+    async def set_children_drivers_a(self,set_energy=True):
+        LOGGER.debug(f'{self.pfx} enter: {self.dev}')
+        for node in self.child_nodes:
+            await node.set_drivers_a(set_energy=set_energy)
+        LOGGER.debug(f'{self.pfx} exit: {self.dev}')
+
     # Set my ST based on the children's current ST
-    # This is called by the child when their ST changes.
+    # This is called by the child when their ST changes
+    # and by set_state_a above
     def set_st_from_children(self):
-        LOGGER.debug(f'enter: {self.dev}')
+        LOGGER.debug(f'{self.pfx} enter: {self.dev}')
         # Check if any node is on, update their status
         for node in self.child_nodes:
             if int(node.getDriver('ST')) > 0:
@@ -83,7 +91,7 @@ class SmartStripNode(SmartDeviceNode):
                 self.set_on()
                 return
         self.set_off()
-        LOGGER.debug(f'exit: {self.dev}')
+        LOGGER.debug(f'{self.pfx} exit: {self.dev}')
 
     def newdev(self):
         return SmartStrip(self.host)
@@ -129,13 +137,18 @@ class SmartStripNode(SmartDeviceNode):
             node.query()
         LOGGER.debug(f'{self.pfx} exit')
 
+    def cmd_set_mon(self,command):
+        super().cmd_set_mon(command)
+
     drivers = [
         {'driver': 'ST', 'value': 0, 'uom': 78},
-        {'driver': 'GV0', 'value': 0, 'uom': 2}  # Connected
+        {'driver': 'GV0', 'value': 0, 'uom': 2},  # Connected
+        {'driver': 'GV6', 'value': 1, 'uom': 2}, #poll device
     ]
     commands = {
         'DON': cmd_set_on,
         'DOF': cmd_set_off,
         'QUERY': query,
         'QUERY_ALL': cmd_query_all,
+        'SET_MON': cmd_set_mon,
     }

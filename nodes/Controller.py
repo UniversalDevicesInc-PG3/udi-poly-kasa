@@ -28,11 +28,6 @@ class Controller(Node):
         self.hb = 0
         self.nodes_by_mac = {}
         self.discover_done = False
-        # For the short/long poll threads, we run them in threads so the main
-        # process is always available for controlling devices
-        self.short_event   = False
-        self.in_short_poll = False
-        self.long_event    = False
         self.in_long_poll  = False
         self.Notices         = Custom(self.poly, 'notices')
         self.Parameters      = Custom(self.poly, 'customparams')
@@ -85,62 +80,13 @@ class Controller(Node):
         self.poly.addLogLevel('DEBUG_MODULES',9,'Debug + Modules')
         LOGGER.debug(f'exit')
 
+    # Controller only needs longPoll
     def handler_poll(self, polltype):
         if polltype == 'longPoll':
             self.longPoll()
-        elif polltype == 'shortPoll':
-            self.shortPoll()
-
-    def shortPoll(self):
-        if not self.discover_done:
-            LOGGER.info('waiting for discover to complete')
-            return
-        if self.in_short_poll:
-            LOGGER.info('Already running')
-            return
-        self.in_short_poll = True
-        if self.short_event is False:
-            LOGGER.debug('Setting up Thread')
-            self.short_event = Event()
-            self.short_thread = Thread(name='shortPoll',target=self._shortPoll)
-            self.short_thread.daemon = True
-            LOGGER.debug('Starting Thread')
-            st = self.short_thread.start()
-            LOGGER.debug(f'Thread start st={st}')
-        # Tell the thread to run
-        LOGGER.debug(f'thread={self.short_thread} event={self.short_event}')
-        if self.short_event is not None:
-            LOGGER.debug('calling event.set')
-            self.short_event.set()
-        else:
-            LOGGER.error(f'event is gone? thread={self.short_thread} event={self.short_event}')
-
-    def _shortPoll(self):
-        while (True):
-            self.short_event.wait()
-            LOGGER.debug('enter')
-            asyncio.run_coroutine_threadsafe(self._shortPoll_a(), self.mainloop)
-            LOGGER.debug('exit')
-            self.short_event.clear()
-        
-    async def _shortPoll_a(self):
-        LOGGER.debug('enter')
-        nodes = []
-        for node_address in self.poly.getNodes():
-            nodes.append(node_address)
-        for node_address in nodes:
-            LOGGER.debug(f'check: node_address={node_address}')
-            node = self.poly.getNode(node_address)
-            LOGGER.debug(f'check: node.address={node.address} node.name={node.name} ')
-            if node.poll:
-                await node.shortPoll()
-                LOGGER.debug(f'done: node.address={node.address} node.name={node.name} ')
-            LOGGER.debug('here')
-        LOGGER.debug('loop done')
-        self.in_short_poll = False
-        LOGGER.debug('exit')
 
     def longPoll(self):
+        LOGGER.debug('enter')
         if not self.discover_done:
             LOGGER.info('waiting for discover to complete')
             return
@@ -148,51 +94,9 @@ class Controller(Node):
             LOGGER.info('Already running')
             return
         self.in_long_poll = True
+        # Heartbeat is not sent if stuck in discover or long_poll?
         self.heartbeat()
-        if not self.discover_done:
-            LOGGER.info('waiting for discover to complete')
-            return
-        if self.long_event is False:
-            LOGGER.debug('Setting up Thread')
-            self.long_event = Event()
-            self.long_thread = Thread(name='longPoll',target=self._longPoll)
-            self.long_thread.daemon = True
-            LOGGER.debug('Starting Thread')
-            st = self.long_thread.start()
-            LOGGER.debug('Thread start st={st}')
-        # Tell the thread to run
-        LOGGER.debug(f'thread={self.long_thread} event={self.long_event}')
-        if self.long_event is not None:
-            LOGGER.debug('calling event.set')
-            self.long_event.set()
-        else:
-            LOGGER.error(f'event is gone? thread={self.long_thread} event={self.long_event}')
-
-    def _longPoll(self):
-        while (True):
-            self.long_event.wait()
-            LOGGER.debug('enter')
-            asyncio.run_coroutine_threadsafe(self._longPoll_a(), self.mainloop)
-            self.long_event.clear()
-            LOGGER.debug('exit')
-
-    async def _longPoll_a(self):
-        LOGGER.debug('enter')
-        all_connected = True
-        for node_address in self.poly.getNodes():
-            node = self.poly.getNode(node_address)
-            if node.poll:
-                try:
-                    if node.is_connected():
-                        await node.longPoll()
-                    else:
-                        LOGGER.warning(f"Known device not responding {node.address} '{node.name}'")
-                        all_connected = False
-                except:
-                    pass # in case node doesn't have a longPoll method
-        #if not all_connected:
-        #    LOGGER.warning("Not all devices are connected, running discover to check for them")
-        await self._discover_new_a()
+        self.discover_new()
         self.in_long_poll = False
         LOGGER.debug('exit')
 
@@ -334,6 +238,9 @@ class Controller(Node):
         # are handled by SmartDevice
         #
 #         LOGGER.error(f"alb:controller.py:{cfg['type']}")
+        if cfg['name'] is None:
+            LOGGER.error(f'Refusing to add node with name None!')
+            return False
         if cfg['type'] == 'SmartPlug':
             self.poly.addNode(SmartPlugNode(self, parent.address, cfg['address'], cfg['name'], dev=dev, cfg=cfg))
         elif cfg['type'] == 'SmartStrip':
@@ -351,7 +258,6 @@ class Controller(Node):
             return False
         # Now that node is added, change name if requested
         self.check_for_rename_node(cfg['address'],name)
-        # We always add it to update the host if necessary
         node = self.poly.getNode(cfg['address'])
         if node is None:
             LOGGER.error(f"Unable to retrieve node address {cfg['address']} for {type} returned {node}")
@@ -368,7 +274,7 @@ class Controller(Node):
             cname = self.poly.getNodeNameFromDb(address)
             #LOGGER.debug(f'getNodeNameFromDb({address})={cname}')
             # Current interface doesn't work to change name before added, so just return the current name and change it later
-            return cname
+            return name if cname is None else cname
         else:
             cname = node.name
             #LOGGER.debug(f'getNode({address})={node} name={cname}')

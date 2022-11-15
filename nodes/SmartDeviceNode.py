@@ -15,15 +15,19 @@ class SmartDeviceNode(Node):
         self.name = name
         self.dev  = dev
         self.cfg  = cfg
-        self.poll = True
+        if not hasattr(self,'poll'):
+            self.poll = True
         self.pfx = f"{self.name}:"
         LOGGER.debug(f'{self.pfx} dev={dev}')
         LOGGER.debug(f'{self.pfx} cfg={cfg}')
         self.ready = False
+        self.ready_warn = False
         self.host = cfg['host']
         self.debug_level = 0
         self.st = None
         self.event  = None
+        self.in_long_poll = False
+        self.in_short_poll = False
         self.connected = None # So start will force setting proper status
         LOGGER.debug(f'{self.pfx} controller={controller} address={address} name={name} host={self.host} id={self.id}')
         if not self.dev is None and self.dev.has_emeter:
@@ -33,7 +37,10 @@ class SmartDeviceNode(Node):
             self.drivers.append({'driver': 'TPW', 'value': 0, 'uom': 33}) #kWH
         self.cfg['id'] = self.id
         super().__init__(controller.poly, primary, address, name)
+        if self.poll:
+            controller.poly.subscribe(controller.poly.POLL,   self.handler_poll)
         controller.poly.subscribe(controller.poly.START,  self.handler_start, address) 
+        self.poly.ready()
 
     def handler_start(self):
         LOGGER.debug(f'enter: {self.name} dev={self.dev}')
@@ -42,6 +49,25 @@ class SmartDeviceNode(Node):
         LOGGER.debug(f'result:{res} {self.name} dev={self.dev}')
         self.ready = True
         LOGGER.debug(f'exit: {self.name} dev={self.dev}')
+
+    def handler_poll(self, polltype):
+        LOGGER.debug(f'{self.pfx} poll={self.poll}')
+        if not self.ready:
+            LOGGER.warning(f'{self.pfx} Node not ready to poll')
+            self.ready_warn = True
+            return False
+        if self.ready_warn:
+            LOGGER.warning(f'{self.pfx} Node is now ready to poll')
+        # Set default for old node servers
+        if self.getDriver('GV6') is None:
+            self.setDriver('GV6',1)
+        if self.getDriver('GV6') == 0:
+            LOGGER.debug(f'{self.pfx} Node poll is turned off')
+            return
+        if polltype == 'longPoll':
+            self.longPoll()
+        elif polltype == 'shortPoll':
+            self.shortPoll()
 
     def query(self):
         LOGGER.info(f'{self.pfx} enter')
@@ -55,23 +81,47 @@ class SmartDeviceNode(Node):
         await self.set_state_a(set_energy=True)
         self.reportDrivers()
 
-    async def shortPoll(self):
+    def shortPoll(self):
+        LOGGER.debug(f'{self.pfx} enter')
+        if self.in_short_poll:
+            LOGGER.warning(f'{self.pfx} Already running')
+            return
+        self.in_short_poll = True
+        fut = asyncio.run_coroutine_threadsafe(self._shortPoll_a(), self.controller.mainloop)
+        res = fut.result()
+        self.in_short_poll = False
+        LOGGER.debug(f'{self.pfx} res={res} exit')
+
+    async def _shortPoll_a(self):
         LOGGER.debug(f'{self.pfx} enter: {self.name}')
         if not self.ready:
             return
-        # Keep trying to connect if possible
+        if not self.connected:
+            LOGGER.info(f'{self.pfx} Not connected, skipping')
+            return
         if await self.connect_a():
             await self.set_state_a(set_energy=False)
         LOGGER.debug(f'{self.pfx} exit: {self.name}')
 
-    async def longPoll(self):
+    def longPoll(self):
+        LOGGER.debug(f'{self.pfx} enter')
+        if self.in_long_poll:
+            LOGGER.warning(f'{self.pfx} Already running')
+            return
+        self.in_long_poll = True
+        fut = asyncio.run_coroutine_threadsafe(self._longPoll_a(), self.controller.mainloop)
+        res = fut.result()
+        self.in_long_poll = False
+        LOGGER.debug(f'{self.pfx} res={res} exit')
+
+    async def _longPoll_a(self):
         if not self.ready:
             return
         if not self.connected:
             LOGGER.info(f'{self.pfx} Not connected, will retry...')
             await self.connect_a()
         if self.connected:
-            await self._set_energy_a(set_energy=True)
+            await self._set_energy_a()
 
     def connect(self):
         fut = asyncio.run_coroutine_threadsafe(self.connect_a(), self.controller.mainloop)
@@ -259,8 +309,22 @@ class SmartDeviceNode(Node):
     def is_connected(self):
         return self.connected
 
+    def set_mon(self,val=None):
+        LOGGER.debug(f'{self.pfx} val={val}')
+        if val is None:
+            val = self.getDriver('GV6')
+            if val is None:
+                val = 1
+            LOGGER.debug(f'{self.pfx} val={val}')
+        self.setDriver('GV6',val)
+
     def cmd_set_on(self, command):
         self.set_on()
 
     def cmd_set_off(self, command):
         self.set_off()
+
+    def cmd_set_mon(self, command):
+        val = int(command.get('value'))
+        LOGGER.debug(f'{self.pfx} val={val}')
+        self.set_mon(val)

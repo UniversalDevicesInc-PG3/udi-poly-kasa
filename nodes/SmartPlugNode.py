@@ -18,6 +18,7 @@ class SmartPlugNode(SmartDeviceNode):
         self.drivers = [
             {'driver': 'ST', 'value': 0, 'uom': 78},
             {'driver': 'GV0', 'value': 0, 'uom': 2}, #connection state
+            {'driver': 'GV6', 'value': 1, 'uom': 2}, #poll device
         ]
         if dev is not None:
             # Figure out the id based in the device info
@@ -40,9 +41,13 @@ class SmartPlugNode(SmartDeviceNode):
 
     def cmd_set_off(self,command):
         super().cmd_set_off(command)
+ 
+    def cmd_set_mon(self,command):
+        super().cmd_set_mon(command)
 
     commands = {
         'DON': cmd_set_on,
         'DOF': cmd_set_off,
+        'SET_MON': cmd_set_mon,
     }
 

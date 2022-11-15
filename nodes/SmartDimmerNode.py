@@ -19,6 +19,7 @@ class SmartDimmerNode(SmartDeviceNode):
         self.drivers = [
             {'driver': 'ST', 'value': 0, 'uom': 51},
             {'driver': 'GV0', 'value': 0, 'uom': 2}, #connection state
+            {'driver': 'GV6', 'value': 1, 'uom': 2}, #poll device
         ]
         if dev is not None:
             # Figure out the id based in the device info
@@ -91,11 +92,15 @@ class SmartDimmerNode(SmartDeviceNode):
             LOGGER.error('{self.pfx} Not supported on this device')
         self.dim()
 
+    def cmd_set_mon(self,command):
+        super().cmd_set_mon(command)
+
     commands = {
         'DON': cmd_set_on,
         'DOF': cmd_set_off,
         'SET_BRI': cmd_set_bri,
         'BRT': cmd_brt,
         'DIM': cmd_dim,
+        'SET_MON': cmd_set_mon,
     }
 

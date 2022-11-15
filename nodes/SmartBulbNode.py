@@ -22,6 +22,7 @@ class SmartBulbNode(SmartDeviceNode):
             {'driver': 'ST', 'value': 0, 'uom': 51},
             {'driver': 'GV0', 'value': 0, 'uom': 2},  #connection state
             {'driver': 'GV5', 'value': 0, 'uom': 100}, #brightness
+            {'driver': 'GV6', 'value': 1, 'uom': 2}, #poll device
         ]
         if dev is not None:
             # Figure out the id based in the device info
@@ -277,6 +278,9 @@ class SmartBulbNode(SmartDeviceNode):
     def cmd_set_color_xy(self, command):
        LOGGER.error('TODO: Not yet implemented')
 
+    def cmd_set_mon(self,command):
+        super().cmd_set_mon(command)
+
     commands = {
         'DON': cmd_set_on,
         'DOF': cmd_set_off,
@@ -291,4 +295,5 @@ class SmartBulbNode(SmartDeviceNode):
         'SET_HSV' : cmd_set_color_hsv,
         'SET_COLOR_RGB': cmd_set_color_rgb,
         'SET_COLOR_XY': cmd_set_color_xy,
+        'SET_MON': cmd_set_mon,
     }

@@ -25,6 +25,7 @@
         <sts>
             <st id="ST" editor="onoff" />
             <st id="GV0" editor="bool" />
+            <st id="GV6" editor="bool" />
         </sts>
         <cmds>
             <sends />
@@ -33,6 +34,9 @@
                 <cmd id="DOF" />
                 <cmd id="QUERY" />
                 <cmd id="QUERY_ALL" />
+                <cmd id="SET_MON">
+                    <p id="" editor="bool" init="GV6" />
+                </cmd>
             </accepts>
         </cmds>
     </nodeDef>
@@ -46,6 +50,7 @@
             <st id="CV" editor="raw" />      <!-- Driver=Current Voltage = energy['voltage'] -->
             <st id="CPW" editor="watts" />   <!-- Driver=Current Power Used = energy['power'] -->
             <st id="TPW" editor="watts" />   <!-- Driver=Total Power Used = energy['total'] -->
+            <st id="GV6" editor="bool" />
         </sts>
         <cmds>
             <sends />
@@ -54,6 +59,9 @@
                 <cmd id="DOF" />
                 <cmd id="QUERY" />
                 <cmd id="QUERY_ALL" />
+                <cmd id="SET_MON">
+                    <p id="" editor="bool" init="GV6" />
+                </cmd>
             </accepts>
         </cmds>
     </nodeDef>
@@ -69,6 +77,9 @@
                 <cmd id="DON" />
                 <cmd id="DOF" />
                 <cmd id="QUERY" />
+                <cmd id="SET_MON">
+                    <p id="" editor="bool" init="GV6" />
+                </cmd>
            </accepts>
         </cmds>
     </nodeDef>
@@ -98,6 +109,7 @@
         <sts>
             <st id="ST" editor="onoff" />
             <st id="GV0" editor="bool" />
+            <st id="GV6" editor="bool" />
         </sts>
         <cmds>
             <sends />
@@ -105,6 +117,9 @@
                 <cmd id="DON" />
                 <cmd id="DOF" />
                 <cmd id="QUERY" />
+                <cmd id="SET_MON">
+                    <p id="" editor="bool" init="GV6" />
+                </cmd>
             </accepts>
         </cmds>
     </nodeDef>
@@ -119,6 +134,7 @@
             <st id="CV" editor="raw" />      <!-- Driver=Current Voltage = energy['voltage'] -->
             <st id="CPW" editor="watts" />   <!-- Driver=Current Power Used = energy['power'] -->
             <st id="TPW" editor="watts" />   <!-- Driver=Total Power Used = energy['total'] -->
+            <st id="GV6" editor="bool" />
         </sts>
         <cmds>
             <sends />
@@ -126,6 +142,9 @@
                 <cmd id="DON" />
                 <cmd id="DOF" />
                 <cmd id="QUERY" />
+                <cmd id="SET_MON">
+                    <p id="" editor="bool" init="GV6" />
+                </cmd>
             </accepts>
         </cmds>
     </nodeDef>
@@ -137,6 +156,7 @@
             <st id="ST" editor="onoff" />
             <st id="GV0" editor="bool" />
             <st id="GV5" editor="bri" /> <!-- Brightness -->
+            <st id="GV6" editor="bool" />
         </sts>
         <cmds>
             <sends />
@@ -147,6 +167,9 @@
                 <cmd id="DON" />
                 <cmd id="DOF" />
                 <cmd id="QUERY" />
+                <cmd id="SET_MON">
+                    <p id="" editor="bool" init="GV6" />
+                </cmd>
             </accepts>
         </cmds>
     </nodeDef>
@@ -162,6 +185,7 @@
             <st id="CV" editor="raw" />      <!-- Driver=Current Voltage = energy['voltage'] -->
             <st id="CPW" editor="watts" />   <!-- Driver=Current Power Used = energy['power'] -->
             <st id="TPW" editor="watts" />   <!-- Driver=Total Power Used = energy['total'] -->
+            <st id="GV6" editor="bool" />
         </sts>
         <cmds>
             <sends />
@@ -172,6 +196,9 @@
                 <cmd id="DON" />
                 <cmd id="DOF" />
                 <cmd id="QUERY" />
+                <cmd id="SET_MON">
+                    <p id="" editor="bool" init="GV6" />
+                </cmd>
             </accepts>
         </cmds>
     </nodeDef>
@@ -183,6 +210,7 @@
             <st id="ST" editor="HCLST" />
             <st id="GV0" editor="bool" />
             <st id="GV5" editor="HCLBRI" /> <!-- Brightness -->
+            <st id="GV6" editor="bool" />
         </sts>
         <cmds>
             <sends />
@@ -194,6 +222,9 @@
                 <cmd id="DOF" />
                 <cmd id="SET_BRI">
                     <p id="" editor="HCLBRI" init="GV5" />
+                </cmd>
+                <cmd id="SET_MON">
+                    <p id="" editor="bool" init="GV6" />
                 </cmd>
             </accepts>
         </cmds>
@@ -210,6 +241,7 @@
             <st id="CV" editor="raw" />      <!-- Driver=Current Voltage = energy['voltage'] -->
             <st id="CPW" editor="watts" />   <!-- Driver=Current Power Used = energy['power'] -->
             <st id="TPW" editor="watts" />   <!-- Driver=Total Power Used = energy['total'] -->
+            <st id="GV6" editor="bool" />
         </sts>
         <cmds>
             <sends />
@@ -220,6 +252,9 @@
                 </cmd>
                 <cmd id="DON" />
                 <cmd id="DOF" />
+                <cmd id="SET_MON">
+                    <p id="" editor="bool" init="GV6" />
+                </cmd>
             </accepts>
         </cmds>
     </nodeDef>
@@ -230,6 +265,7 @@
         <sts>
             <st id="ST" editor="onoff" />
             <st id="GV0" editor="bool" />
+            <st id="GV6" editor="bool" />
         </sts>
         <cmds>
             <sends />
@@ -237,6 +273,9 @@
                 <cmd id="QUERY" />
                 <cmd id="DON" />
                 <cmd id="DOF" />
+                <cmd id="SET_MON">
+                    <p id="" editor="bool" init="GV6" />
+                </cmd>
             </accepts>
         </cmds>
     </nodeDef>
@@ -248,6 +287,7 @@
             <st id="ST" editor="onoff" />
             <st id="GV0" editor="bool" />
             <st id="GV5" editor="bri" /> <!-- Brightness -->
+            <st id="GV6" editor="bool" />
         </sts>
         <cmds>
             <sends />
@@ -258,6 +298,9 @@
                 </cmd>
                 <cmd id="DON" />
                 <cmd id="DOF" />
+                <cmd id="SET_MON">
+                    <p id="" editor="bool" init="GV6" />
+                </cmd>
             </accepts>
         </cmds>
     </nodeDef>
@@ -270,6 +313,7 @@
             <st id="GV0" editor="bool" />
             <st id="GV5" editor="bri" /> <!-- Brightness -->
             <st id="GV2" editor="ctemp" /> <!-- Color Temperature -->
+            <st id="GV6" editor="bool" />
         </sts>
         <cmds>
             <sends />
@@ -280,6 +324,9 @@
                 </cmd>
                 <cmd id="DON" />
                 <cmd id="DOF" />
+                <cmd id="SET_MON">
+                    <p id="" editor="bool" init="GV6" />
+                </cmd>
             </accepts>
         </cmds>
     </nodeDef>
@@ -293,6 +340,7 @@
             <st id="GV2" editor="hue" /> <!-- Hue -->
             <st id="GV3" editor="sat" /> <!-- Saturation -->
             <st id="GV5" editor="bri" /> <!-- Brightness -->
+            <st id="GV6" editor="bool" />
         </sts>
         <cmds>
             <sends />
@@ -303,6 +351,9 @@
                 </cmd>
                 <cmd id="DON" />
                 <cmd id="DOF" />
+                <cmd id="SET_MON">
+                    <p id="" editor="bool" init="GV6" />
+                </cmd>
             </accepts>
         </cmds>
     </nodeDef>
@@ -322,6 +373,7 @@
             <st id="CV" editor="raw" />      <!-- Driver=Current Voltage = energy['voltage'] -->
             <st id="CPW" editor="watts" />   <!-- Driver=Current Power Used = energy['power'] -->
             <st id="TPW" editor="watts" />   <!-- Driver=Total Power Used = energy['total'] -->
+            <st id="GV6" editor="bool" />
         </sts>
         <cmds>
             <sends>
@@ -387,6 +439,9 @@
                 <cmd id="SET_EFFECT">
                     <p id="" editor="HESEL" />
                 </cmd>-->
+                <cmd id="SET_MON">
+                    <p id="" editor="bool" init="GV6" />
+                </cmd>
             </accepts>
         </cmds>
     </nodeDef>
@@ -405,6 +460,7 @@
             <st id="CV" editor="raw" />      <!-- Driver=Current Voltage = energy['voltage'] -->
             <st id="CPW" editor="watts" />   <!-- Driver=Current Power Used = energy['power'] -->
             <st id="TPW" editor="watts" />   <!-- Driver=Total Power Used = energy['total'] -->
+            <st id="GV6" editor="bool" />
         </sts>
         <cmds>
             <sends>
@@ -439,6 +495,9 @@
                 <cmd id="SET_ALERT">
                     <p id="" editor="HASEL" />
                 </cmd> -->
+                <cmd id="SET_MON">
+                    <p id="" editor="bool" init="GV6" />
+                </cmd>
             </accepts>
         </cmds>
     </nodeDef>
@@ -451,6 +510,7 @@
             <st id="GV0" editor="bool" />
             <st id="GV5" editor="bri" /> <!-- Brightness -->
             <st id="CPW" editor="watts" />   <!-- Driver=Current Power Used = energy['power_mw'] -->
+            <st id="GV6" editor="bool" />
         </sts>
         <cmds>
             <sends />
@@ -460,6 +520,9 @@
                 </cmd>
                 <cmd id="DON" />
                 <cmd id="DOF" />
+                <cmd id="SET_MON">
+                    <p id="" editor="bool" init="GV6" />
+                </cmd>
               </accepts>
         </cmds>
     </nodeDef>
@@ -477,6 +540,7 @@
             <st id="CV" editor="raw" />      <!-- Driver=Current Voltage = energy['voltage'] -->
             <st id="CPW" editor="watts" />   <!-- Driver=Current Power Used = energy['power'] -->
             <st id="TPW" editor="watts" />   <!-- Driver=Total Power Used = energy['total'] -->
+            <st id="GV6" editor="bool" />
         </sts>
         <cmds>
             <sends>
@@ -503,6 +567,9 @@
                 <cmd id="SET_ALERT">
                     <p id="" editor="HASEL" />
                 </cmd> -->
+                <cmd id="SET_MON">
+                    <p id="" editor="bool" init="GV6" />
+                </cmd>
             </accepts>
         </cmds>
     </nodeDef>
@@ -522,6 +589,7 @@
             <st id="CV" editor="raw" />      <!-- Driver=Current Voltage = energy['voltage'] -->
             <st id="CPW" editor="watts" />   <!-- Driver=Current Power Used = energy['power'] -->
             <st id="TPW" editor="watts" />   <!-- Driver=Total Power Used = energy['total'] -->
+            <st id="GV6" editor="bool" />
         </sts>
         <cmds>
             <sends>
@@ -587,6 +655,9 @@
                 <cmd id="SET_EFFECT">
                     <p id="" editor="HESEL" />
                 </cmd>-->
+                <cmd id="SET_MON">
+                    <p id="" editor="bool" init="GV6" />
+                </cmd>
             </accepts>
         </cmds>
     </nodeDef>
@@ -605,6 +676,7 @@
             <st id="CV" editor="raw" />      <!-- Driver=Current Voltage = energy['voltage'] -->
             <st id="CPW" editor="watts" />   <!-- Driver=Current Power Used = energy['power'] -->
             <st id="TPW" editor="watts" />   <!-- Driver=Total Power Used = energy['total'] -->
+            <st id="GV6" editor="bool" />
         </sts>
         <cmds>
             <sends>
@@ -662,6 +734,9 @@
                 <cmd id="SET_EFFECT">
                     <p id="" editor="HESEL" />
                 </cmd>-->
+                <cmd id="SET_MON">
+                    <p id="" editor="bool" init="GV6" />
+                </cmd>
             </accepts>
         </cmds>
     </nodeDef>

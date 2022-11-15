@@ -27,8 +27,8 @@ class SmartStripPlugNode(SmartDeviceNode):
                 self.id += 'E'
             else:
                 self.id += 'N'
-        super().__init__(controller, primary, address, name, dev, cfg)
         self.poll = False
+        super().__init__(controller, primary, address, name, dev, cfg)
 
     def start(self):
         LOGGER.debug(f'enter: {self.dev}')
@@ -49,18 +49,20 @@ class SmartStripPlugNode(SmartDeviceNode):
         # So then when it's plugged back in the same dev will still work
         if await self.primary_node.update_a():
             LOGGER.debug(f'after parent update: dev={self.dev}')
-            if self.dev.is_on is True:
-                self.brightness = 100
-                LOGGER.debug(f'{self.pfx} setDriver(ST,100)')
-                self.setDriver('ST',100)
-            else:
-                self.brightness = 0
-                LOGGER.debug(f'{self.pfx} setDriver(ST,0)')
-                self.setDriver('ST',0)
-
-            if set_energy:
-                await self._set_energy_a()
+            await self.set_drivers_a(set_energy=set_energy)
         LOGGER.debug(f'exit:  dev={self.dev}')
+
+    async def set_drivers_a(self,set_energy=True):
+        if self.dev.is_on is True:
+            self.brightness = 100
+            LOGGER.debug(f'{self.pfx} setDriver(ST,100)')
+            self.setDriver('ST',100)
+        else:
+            self.brightness = 0
+            LOGGER.debug(f'{self.pfx} setDriver(ST,0)')
+            self.setDriver('ST',0)
+        if set_energy:
+            await self._set_energy_a()
 
     # The q versions are called by the parent
     def q_set_on(self):

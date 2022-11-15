@@ -31,6 +31,7 @@ CDM-50 = Critical
 # All Devices
 ST-ST-NAME = Status
 ST-GV0-NAME = Connected
+ST-GV6-NAME = Poll Device
 CMD-QUERY_ALL-NAME = Query All
 
 # Smart Strip
@@ -109,6 +110,7 @@ CMD-BRI-NAME = Brightness
 
 CMD-DON-NAME = On
 CMD-DOF-NAME = Off
+CMD-SET_MON-NAME = Set Poll Device
 CMD-DFON-NAME = Fast On
 CMD-DFOF-NAME = Fast Off
 CMD-BRT-NAME = Brighten
