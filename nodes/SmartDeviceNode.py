@@ -58,6 +58,7 @@ class SmartDeviceNode(Node):
             return False
         if self.ready_warn:
             LOGGER.warning(f'{self.pfx} Node is now ready to poll')
+            self.ready_warn = False
         # Set default for old node servers
         if self.getDriver('GV6') is None:
             self.setDriver('GV6',1)

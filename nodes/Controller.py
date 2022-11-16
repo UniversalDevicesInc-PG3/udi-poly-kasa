@@ -152,30 +152,33 @@ class Controller(Node):
         return True
 
     async def discover_new_add_device(self,dev):
-        smac = self.smac(dev.mac)
-        LOGGER.debug(f'enter: mac={smac} dev={dev}')
-        # Known Device?
-        await dev.update()
-        LOGGER.debug(f'mac={smac} dev={dev}')
-        if smac in self.nodes_by_mac:
-            node = self.nodes_by_mac[smac]
-            # See if we need to check for node name changes where Kasa app name is the source
-            self.check_for_rename_node(node.address,node.name)
-            # Make sure the host matches
-            if dev.host != node.host:
-                LOGGER.warning(f"Updating '{node.name}' host from {node.host} to {dev.host}")
-                node.host = dev.host
-                await node.connect_a()
-            else:
-                LOGGER.info(f"Connected:{node.is_connected()} '{node.name}'")
-                if not node.is_connected():
-                    # Previously connected node
-                    LOGGER.warning(f"Connected:{node.is_connected()} '{node.name}' host is {node.host} same as {dev.host}")
+        try:
+            smac = self.smac(dev.mac)
+            LOGGER.debug(f'enter: mac={smac} dev={dev}')
+            # Known Device?
+            await dev.update()
+            LOGGER.debug(f'mac={smac} dev={dev}')
+            if smac in self.nodes_by_mac:
+                node = self.nodes_by_mac[smac]
+                # See if we need to check for node name changes where Kasa app name is the source
+                self.check_for_rename_node(node.address,node.name)
+                # Make sure the host matches
+                if dev.host != node.host:
+                    LOGGER.warning(f"Updating '{node.name}' host from {node.host} to {dev.host}")
+                    node.host = dev.host
                     await node.connect_a()
-        else:
-            LOGGER.warning(f'Found a new device {dev.mac}, adding {dev.alias}')
-            self.add_node(dev=dev)
-
+                else:
+                    LOGGER.info(f"Connected:{node.is_connected()} '{node.name}'")
+                    if not node.is_connected():
+                        # Previously connected node
+                        LOGGER.warning(f"Connected:{node.is_connected()} '{node.name}' host is {node.host} same as {dev.host}")
+                        await node.connect_a()
+            else:
+                LOGGER.warning(f'Found a new device {dev.mac}, adding {dev.alias}')
+                self.add_node(dev=dev)
+        except Exception as ex:
+            LOGGER.error(f'{self.lpfx}',exc_info=True)
+            
     def discover_new(self):
         LOGGER.info('enter')
         if not self.ready:
