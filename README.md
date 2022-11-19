@@ -135,6 +135,8 @@ If you have an issue where the nodes are not showing up properly, open the Polyg
 Restart the Kasa nodeserver by selecting it in the Polyglot dashboard and select Control -> Restart, then watch the log to make sure everything goes well.
 
 # Release Notes
+- 3.0.15: 11/17/2022
+  - Fix [Crash in handler_params](https://github.com/UniversalDevicesInc-PG3/udi-poly-kasa/issues/12)
 - 3.0.14: 11/15/2022
   - Trap exception when adding a new device and it fails to update
 - 3.0.13: 11/14/2022

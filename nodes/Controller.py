@@ -177,7 +177,7 @@ class Controller(Node):
                 LOGGER.warning(f'Found a new device {dev.mac}, adding {dev.alias}')
                 self.add_node(dev=dev)
         except Exception as ex:
-            LOGGER.error(f'{self.lpfx}',exc_info=True)
+            LOGGER.error('Problem adding device',exc_info=True)
             
     def discover_new(self):
         LOGGER.info('enter')
@@ -337,7 +337,7 @@ class Controller(Node):
             "change_node_names": "false"
         }
         for param in defaults:
-            if not param in params:
+            if params in None or not param in params:
                 self.Parameters[param] = defaults[param]
                 return
         #
