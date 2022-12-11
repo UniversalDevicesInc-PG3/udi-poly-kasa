@@ -161,7 +161,7 @@ class Controller(Node):
             if smac in self.nodes_by_mac:
                 node = self.nodes_by_mac[smac]
                 # See if we need to check for node name changes where Kasa app name is the source
-                self.check_for_rename_node(node.address,node.name)
+                #self.check_for_rename_node(node.address,node.name)
                 # Make sure the host matches
                 if dev.host != node.host:
                     LOGGER.warning(f"Updating '{node.name}' host from {node.host} to {dev.host}")
@@ -226,10 +226,7 @@ class Controller(Node):
                 address = get_valid_node_address(mac)
             else:
                 address = get_valid_node_address("{}{:02d}".format(mac,address_suffix_num))
-            # See if we need to check for node name changes where Kasa app name is the source
-            aname = get_valid_node_name(name)
-            aname = self.check_for_rename_node(address,aname)
-            cfg  = { "type": type, "name": aname, "host": dev.host, "mac": mac, "model": dev.model, "address": address}
+            cfg  = { "type": type, "name": get_valid_node_name(name), "host": dev.host, "mac": mac, "model": dev.model, "address": address}
         elif cfg is not None:
             name = cfg['name']
         else:
@@ -245,22 +242,20 @@ class Controller(Node):
             LOGGER.error(f'Refusing to add node with name None!')
             return False
         if cfg['type'] == 'SmartPlug':
-            self.poly.addNode(SmartPlugNode(self, parent.address, cfg['address'], cfg['name'], dev=dev, cfg=cfg))
+            self.poly.addNode(SmartPlugNode(self, parent.address, cfg['address'], cfg['name'], dev=dev, cfg=cfg), rename=self.change_node_names)
         elif cfg['type'] == 'SmartStrip':
-            self.poly.addNode(SmartStripNode(self, cfg['address'], cfg['name'],  dev=dev, cfg=cfg))
+            self.poly.addNode(SmartStripNode(self, cfg['address'], cfg['name'],  dev=dev, cfg=cfg), rename=self.change_node_names)
         elif cfg['type'] == 'SmartStripPlug':
-            self.poly.addNode(SmartStripPlugNode(self, parent.address, cfg['address'], cfg['name'],  dev=dev, cfg=cfg))
+            self.poly.addNode(SmartStripPlugNode(self, parent.address, cfg['address'], cfg['name'],  dev=dev, cfg=cfg), rename=self.change_node_names)
         elif cfg['type'] == 'SmartDimmer':
-            self.poly.addNode(SmartDimmerNode(self, parent.address, cfg['address'], cfg['name'], dev=dev, cfg=cfg))
+            self.poly.addNode(SmartDimmerNode(self, parent.address, cfg['address'], cfg['name'], dev=dev, cfg=cfg), rename=self.change_node_names)
         elif cfg['type'] == 'SmartBulb':
-            self.poly.addNode(SmartBulbNode(self, parent.address, cfg['address'], cfg['name'], dev=dev, cfg=cfg))
+            self.poly.addNode(SmartBulbNode(self, parent.address, cfg['address'], cfg['name'], dev=dev, cfg=cfg), rename=self.change_node_names)
         elif cfg['type'] == 'SmartLightStrip':
-            self.poly.addNode(SmartLightStripNode(self, parent.address, cfg['address'], cfg['name'], dev=dev, cfg=cfg))
+            self.poly.addNode(SmartLightStripNode(self, parent.address, cfg['address'], cfg['name'], dev=dev, cfg=cfg), rename=self.change_node_names)
         else:
             LOGGER.error(f"Device type not yet supported: {cfg['type']}")
             return False
-        # Now that node is added, change name if requested
-        self.check_for_rename_node(cfg['address'],name)
         node = self.poly.getNode(cfg['address'])
         if node is None:
             LOGGER.error(f"Unable to retrieve node address {cfg['address']} for {type} returned {node}")
@@ -268,32 +263,6 @@ class Controller(Node):
             self.nodes_by_mac[self.smac(cfg['mac'])] = node
         LOGGER.debug(f'exit: dev={dev}')
         return node
-
-    def check_for_rename_node(self,address,name):
-        # First see if it's an existing node
-        node = self.poly.getNode(address)
-        #LOGGER.debug(f'getNode({address})={node}')
-        if node is None:
-            cname = self.poly.getNodeNameFromDb(address)
-            #LOGGER.debug(f'getNodeNameFromDb({address})={cname}')
-            # Current interface doesn't work to change name before added, so just return the current name and change it later
-            return name if cname is None else cname
-        else:
-            cname = node.name
-            #LOGGER.debug(f'getNode({address})={node} name={cname}')
-        if cname is not None:
-            #LOGGER.debug(f"node {address} Requested: '{name}' Current: '{cname}'")
-            # Check that the name matches
-            if name != cname:
-                if self.Parameters['change_node_names'] == 'true':
-                    LOGGER.warning(f"Existing node name '{cname}' for {address} does not match requested name '{name}', changing to match")
-                    self.poly.renameNode(address,name)
-                else:
-                    LOGGER.warning(f"Existing node name '{cname}' for {address} does not match requested name '{name}', NOT changing to match, set change_node_names=true to enable")
-                    # Change it to existing name to avoid addNode error
-                    name = cname
-        #LOGGER.debug(f'returning: {name}')
-        return name
 
     def smac(self,mac):
         return re.sub(r'[:]+', '', mac)
@@ -337,7 +306,7 @@ class Controller(Node):
             "change_node_names": "false"
         }
         for param in defaults:
-            if params in None or not param in params:
+            if params is None or not param in params:
                 self.Parameters[param] = defaults[param]
                 return
         #
@@ -360,6 +329,9 @@ class Controller(Node):
                 self.save_cfg(self.cfg_to_dict(data))
                 self.Parameters.delete(param)
                 return
+
+        self.change_node_names = True if self.Parameters['change_node_names'] == 'true' else False
+
         #self.check_params()
         self.handler_params_st = True
 

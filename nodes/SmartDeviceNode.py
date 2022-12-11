@@ -28,9 +28,10 @@ class SmartDeviceNode(Node):
         self.event  = None
         self.in_long_poll = False
         self.in_short_poll = False
+        self.error_connect = False
         self.connected = None # So start will force setting proper status
-        LOGGER.debug(f'{self.pfx} controller={controller} address={address} name={name} host={self.host} id={self.id}')
-        if not self.dev is None and self.dev.has_emeter:
+        LOGGER.debug(f'{self.pfx} controller={controller} address={address} name={name} host={self.host} id={self.id} dev={self.dev} cfg={self.cfg}')
+        if (not self.dev is None and self.dev.has_emeter) or (not self.cfg is None and 'emeter' in self.cfg and self.cfg['emeter']):
             self.drivers.append({'driver': 'CC', 'value': 0, 'uom': 1}) #amps
             self.drivers.append({'driver': 'CV', 'value': 0, 'uom': 72}) #volts
             self.drivers.append({'driver': 'CPW', 'value': 0, 'uom': 73}) #watts
@@ -53,7 +54,7 @@ class SmartDeviceNode(Node):
     def handler_poll(self, polltype):
         LOGGER.debug(f'{self.pfx} poll={self.poll}')
         if not self.ready:
-            LOGGER.warning(f'{self.pfx} Node not ready to poll')
+            LOGGER.warning(f'{self.pfx} Node not ready to poll, must be disconnected or slow to respond?')
             self.ready_warn = True
             return False
         if self.ready_warn:
@@ -98,7 +99,7 @@ class SmartDeviceNode(Node):
         if not self.ready:
             return
         if not self.connected:
-            LOGGER.info(f'{self.pfx} Not connected, skipping')
+            LOGGER.debug(f'{self.pfx} Not connected, skipping')
             return
         if await self.connect_a():
             await self.set_state_a(set_energy=False)
@@ -138,13 +139,20 @@ class SmartDeviceNode(Node):
                 res = await self.update_a()
                 LOGGER.debug(f'{self.pfx} update res={res}')
                 if res:
+                    if self.error_connect:
+                        LOGGER.warning(f"{self.pfx} Device {self.host} responding again")
+                        self.error_connect = False
                     self.set_connected(True)
                     LOGGER.debug(f'{self.pfx} calling reconnected')
                     self.reconnected()
                 else:
-                    LOGGER.error(f"{self.pfx} Unable to update device {self.host} will try again later: res={res}")
+                    if not self.error_connect:
+                        LOGGER.error(f"{self.pfx} Unable to update device {self.host} will try again later: res={res}")
+                        self.error_connect = True
             except SmartDeviceException as ex:
-                LOGGER.error(f"{self.pfx} Unable to connect to device {self.host} will try again later: {ex}")
+                if not self.error_connect:
+                    LOGGER.error(f"{self.pfx} Unable to connect to device {self.host} will try again later: {ex}")
+                    self.error_connect = True
             except:
                 LOGGER.error(f"{self.pfx} Unknown excption connecting to device {self.host} will try again later", exc_info=True)
         LOGGER.debug(f'{self.pfx} exit:{self.connected} {self.name} dev={self.dev}')

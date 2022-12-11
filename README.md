@@ -135,7 +135,12 @@ If you have an issue where the nodes are not showing up properly, open the Polyg
 Restart the Kasa nodeserver by selecting it in the Polyglot dashboard and select Control -> Restart, then watch the log to make sure everything goes well.
 
 # Release Notes
-- 3.0.15: 11/17/2022
+- 3.0.18: 12/10/2022
+  - Try and fix issues for devices that don't respond to first discover, then come alive later.
+- 3.0.17: 12/10/2022
+  - Move to new udi_interface rename_node method instead of previous hack
+  - Node renames are only done on restart of the node server
+- 3.0.16: 11/17/2022
   - Fix [Crash in handler_params](https://github.com/UniversalDevicesInc-PG3/udi-poly-kasa/issues/12)
 - 3.0.14: 11/15/2022
   - Trap exception when adding a new device and it fails to update
