@@ -254,7 +254,7 @@ class SmartDeviceNode(Node):
                     await self._set_energy_a()
             LOGGER.debug(f'{self.pfx} exit:  dev={self.dev}')
         except Exception as ex:
-            LOGGER.error(f'Problem setting device state {dev.host}',exc_info=True)
+            LOGGER.error(f'Problem setting device state {self.dev.host}',exc_info=True)
 
     def is_on(self):
         return self.dev.is_on
