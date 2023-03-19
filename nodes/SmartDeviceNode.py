@@ -217,41 +217,44 @@ class SmartDeviceNode(Node):
         return False
 
     async def set_state_a(self,set_energy=True):
-        LOGGER.debug(f'{self.pfx} enter: dev={self.dev}')
-        # This doesn't call set_energy, since that is only called on long_poll's
-        # We don't use self.connected here because dev might be good, but device is unplugged
-        # So then when it's plugged back in the same dev will still work
-        ocon = self.connected
-        if await self.update_a():
-            if self.dev.is_on is True:
-                if self.dev.is_dimmable:
-                    self.brightness = st2bri(self.dev.brightness)
-                    LOGGER.debug(f'{self.pfx} setDriver(ST,{self.dev.brightness})')
-                    self.setDriver('ST',self.dev.brightness)
-                    self.setDriver('GV5',int(st2bri(self.dev.brightness)))
+        try:
+            LOGGER.debug(f'{self.pfx} enter: dev={self.dev}')
+            # This doesn't call set_energy, since that is only called on long_poll's
+            # We don't use self.connected here because dev might be good, but device is unplugged
+            # So then when it's plugged back in the same dev will still work
+            ocon = self.connected
+            if await self.update_a():
+                if self.dev.is_on is True:
+                    if self.dev.is_dimmable:
+                        self.brightness = st2bri(self.dev.brightness)
+                        LOGGER.debug(f'{self.pfx} setDriver(ST,{self.dev.brightness})')
+                        self.setDriver('ST',self.dev.brightness)
+                        self.setDriver('GV5',int(st2bri(self.dev.brightness)))
+                    else:
+                        self.brightness = 100
+                        LOGGER.debug(f'{self.pfx} setDriver(ST,100)')
+                        self.setDriver('ST',100)
                 else:
-                    self.brightness = 100
-                    LOGGER.debug(f'{self.pfx} setDriver(ST,100)')
-                    self.setDriver('ST',100)
-            else:
-                self.brightness = 0
-                LOGGER.debug(f'{self.pfx} setDriver(ST,0)')
-                self.setDriver('ST',0)
-            if self.dev.is_color:
-                hsv = self.dev.hsv
-                self.setDriver('GV3',hsv[0])
-                self.setDriver('GV4',st2bri(hsv[1]))
-                self.setDriver('GV5',st2bri(hsv[2]))
-            if self.dev.is_variable_color_temp:
-                self.setDriver('CLITEMP',self.dev.color_temp)
+                    self.brightness = 0
+                    LOGGER.debug(f'{self.pfx} setDriver(ST,0)')
+                    self.setDriver('ST',0)
+                if self.dev.is_color:
+                    hsv = self.dev.hsv
+                    self.setDriver('GV3',hsv[0])
+                    self.setDriver('GV4',st2bri(hsv[1]))
+                    self.setDriver('GV5',st2bri(hsv[2]))
+                if self.dev.is_variable_color_temp:
+                    self.setDriver('CLITEMP',self.dev.color_temp)
 
-            # This happens when a device is alive on startup, but later disappears, then comes back.
-            if not ocon and self.connected:
-                LOGGER.debug(f'{self.pfx} calling reconnected')
-                self.reconnected()
-            if set_energy:
-                await self._set_energy_a()
-        LOGGER.debug(f'{self.pfx} exit:  dev={self.dev}')
+                # This happens when a device is alive on startup, but later disappears, then comes back.
+                if not ocon and self.connected:
+                    LOGGER.debug(f'{self.pfx} calling reconnected')
+                    self.reconnected()
+                if set_energy:
+                    await self._set_energy_a()
+            LOGGER.debug(f'{self.pfx} exit:  dev={self.dev}')
+        except Exception as ex:
+            LOGGER.error(f'Problem setting device state {dev.host}',exc_info=True)
 
     def is_on(self):
         return self.dev.is_on

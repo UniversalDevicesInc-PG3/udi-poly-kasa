@@ -153,6 +153,7 @@ class Controller(Node):
 
     async def discover_new_add_device(self,dev):
         try:
+            LOGGER.debug(f'{self.pfx} enter: host={dev.host}')
             smac = self.smac(dev.mac)
             LOGGER.debug(f'enter: mac={smac} dev={dev}')
             # Known Device?
@@ -177,7 +178,7 @@ class Controller(Node):
                 LOGGER.warning(f'Found a new device {dev.mac}, adding {dev.alias}')
                 self.add_node(dev=dev)
         except Exception as ex:
-            LOGGER.error('Problem adding device',exc_info=True)
+            LOGGER.error(f'Problem adding device {dev.host}',exc_info=True)
             
     def discover_new(self):
         LOGGER.info('enter')
