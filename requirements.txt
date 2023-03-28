@@ -1,4 +1,4 @@
-udi_interface>=3.0.51
+udi_interface>=3.0.56
 deprecation
 python-kasa>=0.4.1
 

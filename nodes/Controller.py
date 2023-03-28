@@ -153,7 +153,7 @@ class Controller(Node):
 
     async def discover_new_add_device(self,dev):
         try:
-            LOGGER.debug(f'{self.pfx} enter: host={dev.host}')
+            LOGGER.debug(f'enter: host={dev.host}')
             smac = self.smac(dev.mac)
             LOGGER.debug(f'enter: mac={smac} dev={dev}')
             # Known Device?
