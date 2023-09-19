@@ -309,6 +309,7 @@ class SmartDeviceNode(Node):
         if st:
             # Make sure current cfg is saved
             LOGGER.debug(f"{self.pfx} save_cfg {st}")
+            self.update()
             try:
                 self.cfg['host']  = self.dev.host
                 self.cfg['model'] = self.dev.model
