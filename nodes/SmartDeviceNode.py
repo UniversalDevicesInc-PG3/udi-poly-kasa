@@ -98,6 +98,7 @@ class SmartDeviceNode(Node):
     async def _shortPoll_a(self):
         LOGGER.debug(f'{self.pfx} enter: {self.name}')
         if not self.ready:
+            LOGGER.warning(f'{self.pfx} Not ready, skipping')
             return
         if not self.connected:
             LOGGER.debug(f'{self.pfx} Not connected, skipping')
@@ -119,6 +120,7 @@ class SmartDeviceNode(Node):
 
     async def _longPoll_a(self):
         if not self.ready:
+            LOGGER.warning(f'{self.pfx} Not ready, skipping')
             return
         if not self.connected:
             LOGGER.info(f'{self.pfx} Not connected, will retry...')
