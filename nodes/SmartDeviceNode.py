@@ -203,16 +203,19 @@ class SmartDeviceNode(Node):
                 self.set_connected(False)
             LOGGER.debug(f'exit:False {self.name} dev={self.dev}')
             return False
-        try:
-            await self.dev.update()
-            LOGGER.debug(f'exit:True {self.name} dev={self.dev}')
-            return True
-        except SmartDeviceException as ex:
-            if self.connected:
-                LOGGER.error(f'{self.pfx} failed: {ex}')
-        except Exception as ex:
-            if self.connected:
-                LOGGER.error(f'{self.pfx} failed', exc_info=True)
+        # Make sure we are connected
+        await self.connect_a()
+        if self.is_connected():
+            try:
+                await self.dev.update()
+                LOGGER.debug(f'exit:True {self.name} dev={self.dev}')
+                return True
+            except SmartDeviceException as ex:
+                if self.connected:
+                    LOGGER.error(f'{self.pfx} failed: {ex}')
+            except Exception as ex:
+                if self.connected:
+                    LOGGER.error(f'{self.pfx} failed', exc_info=True)
         self.set_connected(False)
         LOGGER.debug(f'exit:False {self.name} dev={self.dev}')
         return False
