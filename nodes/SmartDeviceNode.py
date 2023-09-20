@@ -74,6 +74,7 @@ class SmartDeviceNode(Node):
     def query(self):
         LOGGER.info(f'{self.pfx} enter')
         fut = asyncio.run_coroutine_threadsafe(self.set_state_a(), self.controller.mainloop)
+        LOGGER.info(f'{self.pfx} waiting for set_state_a results...')
         res = fut.result()
         LOGGER.info(f'{self.pfx} res={res}')
         self.reportDrivers()
