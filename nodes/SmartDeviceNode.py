@@ -127,6 +127,8 @@ class SmartDeviceNode(Node):
             await self._set_energy_a()
 
     def connect(self):
+        if self.is_connected():
+            return True
         fut = asyncio.run_coroutine_threadsafe(self.connect_a(), self.controller.mainloop)
         return fut.result()
 
@@ -203,11 +205,8 @@ class SmartDeviceNode(Node):
                 self.set_connected(False)
             LOGGER.debug(f'exit:False {self.name} dev={self.dev}')
             return False
-        # Make sure we are connected
-        await self.connect_a()
         if self.is_connected():
             try:
-                await self.dev.update()
                 LOGGER.debug(f'exit:True {self.name} dev={self.dev}')
                 return True
             except SmartDeviceException as ex:
