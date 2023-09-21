@@ -238,7 +238,6 @@ class Controller(Node):
         # Add Based on device type.  SmartStrip is a unique type, all others
         # are handled by SmartDevice
         #
-#         LOGGER.error(f"alb:controller.py:{cfg['type']}")
         if cfg['name'] is None:
             LOGGER.error(f'Refusing to add node with name None!')
             return False
@@ -249,7 +248,7 @@ class Controller(Node):
             # Check that the name matches
             if cfg['name'] != cname:
                 if self.change_node_names:
-                    LOGGER.warning(f"Existing node name '{cname}' for {cfg['address']} does not match requested name '{cfg['name']}', changing to match")
+                    LOGGER.warning(f"Existing node name '{cname}' for {cfg['address']} does not match requested name '{cfg['name']}', changing to match: self.poly.renameNode({cfg['address']},{cfg['name']})")
                     self.poly.renameNode(cfg['address'],cfg['name'])
                 else:
                     LOGGER.warning(f"Existing node name '{cname}' for {cfg['address']} does not match requested name '{cfg['name']}', NOT changing to match, set change_node_names=true to enable")
