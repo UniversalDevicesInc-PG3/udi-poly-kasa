@@ -80,7 +80,7 @@ class SmartStripNode(SmartDeviceNode):
             naddress = "{}{:02d}".format(self.address,pnum+1)
             nname    = self.dev.children[pnum].alias
             LOGGER.info(f"{self.pfx} adding plug num={pnum} address={naddress} name={nname}")
-            node = self.controller.add_node(parent=self, address_suffix_num=pnum+1, dev=self.dev.children[pnum])
+            node = self.controller.add_device_node(parent=self, address_suffix_num=pnum+1, dev=self.dev.children[pnum])
             if node is False:
                 LOGGER.error(f'{self.pfx} Failed to add node num={pnum} address={naddress} name={nname}')
             else:
