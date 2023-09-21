@@ -271,7 +271,7 @@ class Controller(Node):
             LOGGER.debug(f"node {address} Requested: '{node.name}' Current: '{cname}'")
             # Check that the name matches
             if node.name != cname:
-                if self.Params['change_node_names'] == 'true':
+                if self.change_node_names:
                     LOGGER.warning(f"Existing node name '{cname}' for {address} does not match requested name '{node.name}', changing to match")
                     self.poly.renameNode(address,node.name)
                 else:
