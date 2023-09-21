@@ -241,19 +241,6 @@ class Controller(Node):
         if cfg['name'] is None:
             LOGGER.error(f'Refusing to add node with name None!')
             return False
-        # See if we need to check for node name changes where Kasa is the source
-        cname = self.poly.getNodeNameFromDb(cfg['address'])
-        if cname is not None:
-            LOGGER.debug(f"node {cfg['address']} Requested: '{cfg['name']}' Current: '{cname}'")
-            # Check that the name matches
-            if cfg['name'] != cname:
-                if self.change_node_names:
-                    LOGGER.warning(f"Existing node name '{cname}' for {cfg['address']} does not match requested name '{cfg['name']}', changing to match: self.poly.renameNode({cfg['address']},{cfg['name']})")
-                    self.poly.renameNode(cfg['address'],cfg['name'])
-                else:
-                    LOGGER.warning(f"Existing node name '{cname}' for {cfg['address']} does not match requested name '{cfg['name']}', NOT changing to match, set change_node_names=true to enable")
-                    # Change it to existing name to avoid addNode error
-                    cfg['name'] = cname        
         if cfg['type'] == 'SmartPlug':
             self.poly.addNode(SmartPlugNode(self, parent.address, cfg['address'], cfg['name'], dev=dev, cfg=cfg))
         elif cfg['type'] == 'SmartStrip':
@@ -274,6 +261,19 @@ class Controller(Node):
             LOGGER.error(f"Unable to retrieve node address {cfg['address']} for {type} returned {node}")
         else:
             self.nodes_by_mac[self.smac(cfg['mac'])] = node
+        # See if we need to check for node name changes where Kasa is the source
+        cname = self.poly.getNodeNameFromDb(cfg['address'])
+        if cname is not None:
+            LOGGER.debug(f"node {cfg['address']} Requested: '{cfg['name']}' Current: '{cname}'")
+            # Check that the name matches
+            if cfg['name'] != cname:
+                if self.change_node_names:
+                    LOGGER.warning(f"Existing node name '{cname}' for {cfg['address']} does not match requested name '{cfg['name']}', changing to match: self.poly.renameNode({cfg['address']},{cfg['name']})")
+                    self.poly.renameNode(cfg['address'],cfg['name'])
+                else:
+                    LOGGER.warning(f"Existing node name '{cname}' for {cfg['address']} does not match requested name '{cfg['name']}', NOT changing to match, set change_node_names=true to enable")
+                    # Change it to existing name to avoid addNode error
+                    cfg['name'] = cname        
         LOGGER.debug(f'exit: dev={dev}')
         return node
 
