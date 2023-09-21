@@ -243,16 +243,16 @@ class Controller(Node):
             LOGGER.error(f'Refusing to add node with name None!')
             return False
         # See if we need to check for node name changes where Kasa is the source
-        cname = self.poly.getNodeNameFromDb(address)
+        cname = self.poly.getNodeNameFromDb(cfg['address'])
         if cname is not None:
-            LOGGER.debug(f"node {address} Requested: '{node.name}' Current: '{cname}'")
+            LOGGER.debug(f"node {cfg['address']} Requested: '{node.name}' Current: '{cname}'")
             # Check that the name matches
             if node.name != cname:
                 if self.change_node_names:
-                    LOGGER.warning(f"Existing node name '{cname}' for {address} does not match requested name '{node.name}', changing to match")
-                    self.poly.renameNode(address,node.name)
+                    LOGGER.warning(f"Existing node name '{cname}' for {cfg['address']} does not match requested name '{node.name}', changing to match")
+                    self.poly.renameNode(cfg['address'],node.name)
                 else:
-                    LOGGER.warning(f"Existing node name '{cname}' for {address} does not match requested name '{node.name}', NOT changing to match, set change_node_names=true to enable")
+                    LOGGER.warning(f"Existing node name '{cname}' for {cfg['address']} does not match requested name '{node.name}', NOT changing to match, set change_node_names=true to enable")
                     # Change it to existing name to avoid addNode error
                     node.name = cname        
         if cfg['type'] == 'SmartPlug':
