@@ -16,9 +16,9 @@ class SmartPlugNode(SmartDeviceNode):
         self.name = name
         # All devices have these.
         self.drivers = [
-            {'driver': 'ST', 'value': 0, 'uom': 78},
-            {'driver': 'GV0', 'value': 0, 'uom': 2}, #connection state
-            {'driver': 'GV6', 'value': 1, 'uom': 2}, #poll device
+            {'driver': 'ST', 'value': 0, 'uom': 51, 'name': 'State'},
+            {'driver': 'GV0', 'value': 0, 'uom': 2, 'name': 'Connected'},
+            {'driver': 'GV6', 'value': 1, 'uom': 2, 'name': 'Poll Device'},
         ]
         if dev is not None:
             # Figure out the id based in the device info
