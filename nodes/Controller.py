@@ -128,7 +128,7 @@ class Controller(Node):
     async def discover_add_device(self,dev):
         LOGGER.debug(f"enter: {dev}")
         LOGGER.info(f"Got Device\n\tAlias:{dev.alias}\n\tModel:{dev.model}\n\tMac:{dev.mac}\n\tHost:{dev.host}")
-        self.add_node(dev=dev)
+        self.add_device_node(dev=dev)
         # Add to our list of added devices
         self.devm[self.smac(dev.mac)] = True
         LOGGER.debug(f"exit: {dev}")
@@ -149,7 +149,7 @@ class Controller(Node):
                 LOGGER.debug(f'cfg={cfg}')
                 if cfg is not None:
                     LOGGER.warning(f"Adding previously known device that didn't respond to discover: {cfg}")
-                    self.add_node(cfg=cfg)
+                    self.add_device_node(cfg=cfg)
         LOGGER.debug('exit')
         return True
 
@@ -176,7 +176,7 @@ class Controller(Node):
                         await node.connect_a()
             else:
                 LOGGER.warning(f'Found a new device {dev.mac}, adding {dev.alias}')
-                self.add_node(dev=dev)
+                self.add_device_node(dev=dev)
         except Exception as ex:
             LOGGER.error(f'Problem adding device {dev.host}',exc_info=True)
             
@@ -194,7 +194,7 @@ class Controller(Node):
         await Discover.discover(target=self.poly.network_interface['broadcast'],on_discovered=self.discover_new_add_device)
 
     # Add a node based on dev returned from discover or the stored config.
-    def add_node(self, parent=None, address_suffix_num=None, dev=None, cfg=None):
+    def add_device_node(self, parent=None, address_suffix_num=None, dev=None, cfg=None):
         LOGGER.debug(f'enter: dev={dev}')
         if parent is None:
             parent = self
@@ -234,19 +234,6 @@ class Controller(Node):
             LOGGER.error(f"INTERNAL ERROR: dev={dev} and cfg={cfg}")
             return False
         LOGGER.info(f"adding type={cfg['type']} address={cfg['address']} name='{cfg['name']}' ")
-        # See if we need to check for node name changes where Kasa is the source
-        cname = self.poly.getNodeNameFromDb(cfg['address'])
-        if cname is not None:
-            LOGGER.debug(f"node {cfg['address']} Requested: '{cfg['name']}' Current: '{cname}'")
-            # Check that the name matches
-            if cfg['name'] != cname:
-                if self.change_node_names:
-                    LOGGER.warning(f"Existing node name '{cname}' for {cfg['address']} does not match requested name '{cfg['name']}', changing to match: self.poly.renameNode({cfg['address']},{cfg['name']})")
-                    self.poly.renameNode(cfg['address'],cfg['name'])
-                else:
-                    LOGGER.warning(f"Existing node name '{cname}' for {cfg['address']} does not match requested name '{cfg['name']}', NOT changing to match, set change_node_names=true to enable")
-                    # Change it to existing name to avoid addNode error
-                    cfg['name'] = cname        
         #
         # Add Based on device type.  SmartStrip is a unique type, all others
         # are handled by SmartDevice
@@ -255,17 +242,17 @@ class Controller(Node):
             LOGGER.error(f'Refusing to add node with name None!')
             return False
         if cfg['type'] == 'SmartPlug':
-            self.poly.addNode(SmartPlugNode(self, parent.address, cfg['address'], cfg['name'], dev=dev, cfg=cfg))
+            self.add_node(cfg['address'],SmartPlugNode(self, parent.address, cfg['address'], cfg['name'], dev=dev, cfg=cfg))
         elif cfg['type'] == 'SmartStrip':
-            self.poly.addNode(SmartStripNode(self, cfg['address'], cfg['name'],  dev=dev, cfg=cfg))
+            self.add_node(cfg['address'],SmartStripNode(self, cfg['address'], cfg['name'],  dev=dev, cfg=cfg))
         elif cfg['type'] == 'SmartStripPlug':
-            self.poly.addNode(SmartStripPlugNode(self, parent.address, cfg['address'], cfg['name'],  dev=dev, cfg=cfg))
+            self.add_node(cfg['address'],SmartStripPlugNode(self, parent.address, cfg['address'], cfg['name'],  dev=dev, cfg=cfg))
         elif cfg['type'] == 'SmartDimmer':
-            self.poly.addNode(SmartDimmerNode(self, parent.address, cfg['address'], cfg['name'], dev=dev, cfg=cfg))
+            self.add_node(cfg['address'],SmartDimmerNode(self, parent.address, cfg['address'], cfg['name'], dev=dev, cfg=cfg))
         elif cfg['type'] == 'SmartBulb':
-            self.poly.addNode(SmartBulbNode(self, parent.address, cfg['address'], cfg['name'], dev=dev, cfg=cfg))
+            self.add_node(cfg['address'],SmartBulbNode(self, parent.address, cfg['address'], cfg['name'], dev=dev, cfg=cfg))
         elif cfg['type'] == 'SmartLightStrip':
-            self.poly.addNode(SmartLightStripNode(self, parent.address, cfg['address'], cfg['name'], dev=dev, cfg=cfg))
+            self.add_node(cfg['address'],SmartLightStripNode(self, parent.address, cfg['address'], cfg['name'], dev=dev, cfg=cfg))
         else:
             LOGGER.error(f"Device type not yet supported: {cfg['type']}")
             return False
@@ -275,6 +262,30 @@ class Controller(Node):
         else:
             self.nodes_by_mac[self.smac(cfg['mac'])] = node
         LOGGER.debug(f'exit: dev={dev}')
+        return node
+
+    def add_node(self,address,node):
+        # See if we need to check for node name changes where Kasa is the source
+        cname = self.poly.getNodeNameFromDb(address)
+        if cname is not None:
+            LOGGER.debug(f"node {address} Requested: '{node.name}' Current: '{cname}'")
+            # Check that the name matches
+            if node.name != cname:
+                if self.Params['change_node_names'] == 'true':
+                    LOGGER.warning(f"Existing node name '{cname}' for {address} does not match requested name '{node.name}', changing to match")
+                    self.poly.renameNode(address,node.name)
+                else:
+                    LOGGER.warning(f"Existing node name '{cname}' for {address} does not match requested name '{node.name}', NOT changing to match, set change_node_names=true to enable")
+                    # Change it to existing name to avoid addNode error
+                    node.name = cname
+        LOGGER.debug(f"Adding: {node.name}")
+        self.poly.addNode(node)
+        self.wait_for_node_done()
+        gnode = self.poly.getNode(address)
+        if gnode is None:
+            msg = f'Failed to add node address {address}'
+            LOGGER.error(msg)
+            self.inc_error(msg)
         return node
 
     def smac(self,mac):
