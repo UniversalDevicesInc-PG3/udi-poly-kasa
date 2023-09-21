@@ -280,7 +280,7 @@ class Controller(Node):
                     node.name = cname
         LOGGER.debug(f"Adding: {node.name}")
         self.poly.addNode(node)
-        self.wait_for_node_done()
+        #self.wait_for_node_done()
         gnode = self.poly.getNode(address)
         if gnode is None:
             msg = f'Failed to add node address {address}'
