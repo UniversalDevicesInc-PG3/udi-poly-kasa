@@ -32,10 +32,10 @@ class SmartDeviceNode(Node):
         self.connected = None # So start will force setting proper status
         LOGGER.debug(f'{self.pfx} controller={controller} address={address} name={name} host={self.host} id={self.id} dev={self.dev} cfg={self.cfg}')
         if (not self.dev is None and self.dev.has_emeter) or (not self.cfg is None and 'emeter' in self.cfg and self.cfg['emeter']):
-            self.drivers.append({'driver': 'CC', 'value': 0, 'uom': 1}) #amps
-            self.drivers.append({'driver': 'CV', 'value': 0, 'uom': 72}) #volts
-            self.drivers.append({'driver': 'CPW', 'value': 0, 'uom': 73}) #watts
-            self.drivers.append({'driver': 'TPW', 'value': 0, 'uom': 33}) #kWH
+            self.drivers.append({'driver': 'CC', 'value': 0, 'uom': 1, 'name': 'Current Current'})
+            self.drivers.append({'driver': 'CV', 'value': 0, 'uom': 72, 'name': 'Current Voltage'})
+            self.drivers.append({'driver': 'CPW', 'value': 0, 'uom': 73, 'name': 'Current Power Watts'})
+            self.drivers.append({'driver': 'TPW', 'value': 0, 'uom': 33, 'name': 'Total Energy kWh'})
         self.cfg['id'] = self.id
         super().__init__(controller.poly, primary, address, name)
         if self.poll:

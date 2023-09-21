@@ -17,8 +17,8 @@ class SmartStripPlugNode(SmartDeviceNode):
         self.primary_node = controller.poly.getNode(primary)
         # All devices have these.
         self.drivers = [
-            {'driver': 'ST', 'value': 0, 'uom': 78},
-            {'driver': 'GV0', 'value': 0, 'uom': 2}, #connection state
+            {'driver': 'ST', 'value': 0, 'uom': 51, 'name': 'State'},
+            {'driver': 'GV0', 'value': 0, 'uom': 2, 'name': 'Connected'},
         ]
         if dev is not None:
             # Figure out the id based in the device info

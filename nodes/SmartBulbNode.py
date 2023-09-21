@@ -19,10 +19,10 @@ class SmartBulbNode(SmartDeviceNode):
         self.name = name
         self.debug_level = 0
         self.drivers = [
-            {'driver': 'ST', 'value': 0, 'uom': 51},
-            {'driver': 'GV0', 'value': 0, 'uom': 2},  #connection state
-            {'driver': 'GV5', 'value': 0, 'uom': 100}, #brightness
-            {'driver': 'GV6', 'value': 1, 'uom': 2}, #poll device
+            {'driver': 'ST', 'value': 0, 'uom': 51, 'name': 'State'},
+            {'driver': 'GV0', 'value': 0, 'uom': 2, 'name': 'Connected'},
+            {'driver': 'GV5', 'value': 0, 'uom': 100, 'name': 'Brightness'},
+            {'driver': 'GV6', 'value': 1, 'uom': 2, 'name': 'Poll Device'},
         ]
         if dev is not None:
             # Figure out the id based in the device info
@@ -49,12 +49,12 @@ class SmartBulbNode(SmartDeviceNode):
         else:
             self.id = cfg['id']
         if cfg['color_temp']:
-            self.drivers.append({'driver': 'CLITEMP', 'value': 0, 'uom': 26})
+            self.drivers.append({'driver': 'CLITEMP', 'value': 0, 'uom': 26, 'name': 'Color Temperature'})
         if cfg['color']:
-            self.drivers.append({'driver': 'GV3', 'value': 0, 'uom': 100}) #hue
-            self.drivers.append({'driver': 'GV4', 'value': 0, 'uom': 100}) #sat
+            self.drivers.append({'driver': 'GV3', 'value': 0, 'uom': 100, 'name': 'Hue'})
+            self.drivers.append({'driver': 'GV4', 'value': 0, 'uom': 100, 'name': 'Saturation'})
         if cfg['emeter']:
-            self.drivers.append({'driver': 'CPW', 'value': 0, 'uom': 73})            
+            self.drivers.append({'driver': 'CPW', 'value': 0, 'uom': 73, 'name': 'Current Power Watts'})            
         super().__init__(controller, primary, address, name, dev, cfg)
 
     async def set_bri_a(self,val):

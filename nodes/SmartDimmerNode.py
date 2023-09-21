@@ -17,16 +17,16 @@ class SmartDimmerNode(SmartDeviceNode):
         self.name = name
         # All devices have these.
         self.drivers = [
-            {'driver': 'ST', 'value': 0, 'uom': 51},
-            {'driver': 'GV0', 'value': 0, 'uom': 2}, #connection state
-            {'driver': 'GV6', 'value': 1, 'uom': 2}, #poll device
+            {'driver': 'ST', 'value': 0, 'uom': 51, 'name': 'State'},
+            {'driver': 'GV0', 'value': 0, 'uom': 2, 'name': 'Connected'},
+            {'driver': 'GV6', 'value': 1, 'uom': 2, 'name': 'Poll Device'},
         ]
         if dev is not None:
             # Figure out the id based in the device info
             self.id = 'SmartDimmer_'
             if dev.is_dimmable:
                 self.id += 'D'
-                self.drivers.append({'driver': 'GV5', 'value': 0, 'uom': 100})
+                self.drivers.append({'driver': 'GV5', 'value': 0, 'uom': 100, 'name': 'Brightness'})
             else:
                 self.id += 'N'
             if dev.has_emeter:
@@ -35,10 +35,10 @@ class SmartDimmerNode(SmartDeviceNode):
                 self.id += 'N'
             cfg['emeter'] = dev.has_emeter
         if cfg['emeter']:
-            self.drivers.append({'driver': 'CC', 'value': 0, 'uom': 56})
-            self.drivers.append({'driver': 'CV', 'value': 0, 'uom': 56})
-            self.drivers.append({'driver': 'CPW', 'value': 0, 'uom': 73})
-            self.drivers.append({'driver': 'TPW', 'value': 0, 'uom': 73})
+            self.drivers.append({'driver': 'CC', 'value': 0, 'uom': 1, 'name': 'Current Current'})
+            self.drivers.append({'driver': 'CV', 'value': 0, 'uom': 72, 'name': 'Current Voltage'})
+            self.drivers.append({'driver': 'CPW', 'value': 0, 'uom': 73, 'name': 'Current Power Watts'})
+            self.drivers.append({'driver': 'TPW', 'value': 0, 'uom': 33, 'name': 'Total Energy kWh'})
         super().__init__(controller, primary, address, name, dev, cfg)
 
     def set_bri(self,val):

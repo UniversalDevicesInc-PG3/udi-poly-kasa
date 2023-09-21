@@ -9,6 +9,11 @@ class SmartStripNode(SmartDeviceNode):
     def __init__(self, controller, address, name, dev=None, cfg=None):
         self.ready = False
         self.name = name
+        self.drivers = [
+            {'driver': 'ST', 'value': 0, 'uom': 51, 'name': 'State'},
+            {'driver': 'GV0', 'value': 0, 'uom': 2, 'name': 'Connected'},
+            {'driver': 'GV6', 'value': 1, 'uom': 2, 'name': 'Poll Device'},
+        ]
         if dev is not None:
             self.host = dev.host
             cfg['emeter'] = dev.has_emeter
@@ -140,11 +145,6 @@ class SmartStripNode(SmartDeviceNode):
     def cmd_set_mon(self,command):
         super().cmd_set_mon(command)
 
-    drivers = [
-        {'driver': 'ST', 'value': 0, 'uom': 78},
-        {'driver': 'GV0', 'value': 0, 'uom': 2},  # Connected
-        {'driver': 'GV6', 'value': 1, 'uom': 2}, #poll device
-    ]
     commands = {
         'DON': cmd_set_on,
         'DOF': cmd_set_off,

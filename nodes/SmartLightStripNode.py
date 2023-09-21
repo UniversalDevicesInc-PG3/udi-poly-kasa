@@ -41,10 +41,10 @@ class SmartLightStripNode(SmartBulbNode):
             id = cfg['id']
         LOGGER.debug(f'enter:xxx address={address} name={name}')
         if cfg['color_temp']:
-            self.drivers.append({'driver': 'CLITEMP', 'value': 0, 'uom': 26})
+            self.drivers.append({'driver': 'CLITEMP', 'value': 0, 'uom': 26, 'name': 'Color Temperature'})
         if cfg['color']:
-            self.drivers.append({'driver': 'GV3', 'value': 0, 'uom': 100}) #hue
-            self.drivers.append({'driver': 'GV4', 'value': 0, 'uom': 100}) #sat
+            self.drivers.append({'driver': 'GV3', 'value': 0, 'uom': 100, 'name': 'Hue'})
+            self.drivers.append({'driver': 'GV4', 'value': 0, 'uom': 100, 'name': 'Saturation'})
         super().__init__(controller, primary, address, name, dev, cfg)
         self.id = id
         

@@ -82,8 +82,10 @@ class Controller(Node):
 
     # Controller only needs longPoll
     def handler_poll(self, polltype):
+        LOGGER.debug('enter')
         if polltype == 'longPoll':
             self.longPoll()
+        LOGGER.debug('exit')
 
     def longPoll(self):
         LOGGER.debug('enter')
@@ -378,5 +380,5 @@ class Controller(Node):
       'UPDATE_PROFILE': _cmd_update_profile,
     }
     drivers = [
-        {'driver': 'ST',  'value':  1, 'uom':  25} ,
+        {'driver': 'ST',  'value':  1, 'uom':  25, 'name': 'NodeServer Online'} ,
     ]
