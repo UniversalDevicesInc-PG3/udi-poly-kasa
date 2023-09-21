@@ -14,6 +14,7 @@ class SmartStripNode(SmartDeviceNode):
             {'driver': 'GV0', 'value': 0, 'uom': 2, 'name': 'Connected'},
             {'driver': 'GV6', 'value': 1, 'uom': 2, 'name': 'Poll Device'},
         ]
+        self.address = address
         if dev is not None:
             self.host = dev.host
             cfg['emeter'] = dev.has_emeter
@@ -29,6 +30,7 @@ class SmartStripNode(SmartDeviceNode):
         self.pfx = f"{self.name}:"
         self.child_nodes = []
         LOGGER.debug(f'{self.pfx} controller={controller} address={address} name={name} host={self.host}')
+        controller.poly.subscribe(controller.poly.ADDNODEDONE,       self.add_node_done)
         # The strip is it's own parent since the plugs are it's children so
         # pass my adress as parent
         super().__init__(controller, address, address, name, dev, cfg)
@@ -37,10 +39,16 @@ class SmartStripNode(SmartDeviceNode):
     def handler_start(self):
         LOGGER.debug(f'{self.pfx} enter:')
         super(SmartStripNode, self).handler_start()
-        if self.is_connected():
-            self.add_children()
         self.ready = True
         LOGGER.debug(f'{self.pfx} exit')
+
+    def add_node_done(self, data):
+        if (data['address'] != self.address):
+            return
+        LOGGER.debug(f'{self.pfx} enter: data={data} address={self.address}')
+        if self.is_connected():
+            self.update()
+            self.add_children()
 
     def query(self):
         super().query()
