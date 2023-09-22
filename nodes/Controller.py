@@ -181,7 +181,7 @@ class Controller(Node):
                 LOGGER.warning(f'Found a new device {dev.mac}, adding {dev.alias}')
                 self.add_device_node(dev=dev)
         except Exception as ex:
-            LOGGER.error(f'{ex} adding device {dev}',exc_info=False)
+            LOGGER.error(f'{ex} {dev}',exc_info=False)
             
     def discover_new(self):
         LOGGER.info('enter')
