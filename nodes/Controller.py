@@ -265,19 +265,6 @@ class Controller(Node):
         return node
 
     def add_node(self,address,node):
-        # See if we need to check for node name changes where Kasa is the source
-        cname = self.poly.getNodeNameFromDb(address)
-        if cname is not None:
-            LOGGER.debug(f"node {address} Requested: '{node.name}' Current: '{cname}'")
-            # Check that the name matches
-            if node.name != cname:
-                if self.change_node_names:
-                    LOGGER.warning(f"Existing node name '{cname}' for {address} does not match requested name '{node.name}', changing to match")
-                    self.poly.renameNode(address,node.name)
-                else:
-                    LOGGER.warning(f"Existing node name '{cname}' for {address} does not match requested name '{node.name}', NOT changing to match, set change_node_names=true to enable")
-                    # Change it to existing name to avoid addNode error
-                    node.name = cname
         LOGGER.debug(f"Adding: {node.name}")
         self.poly.addNode(node)
         #self.wait_for_node_done()
@@ -285,8 +272,25 @@ class Controller(Node):
         if gnode is None:
             msg = f'Failed to add node address {address}'
             LOGGER.error(msg)
-            self.inc_error(msg)
-        return node
+            #self.inc_error(msg)
+        else:
+            # See if we need to check for node name changes where Kasa is the source
+            cname = self.poly.getNodeNameFromDb(address)
+            if cname is not None:
+                LOGGER.debug(f"node {address} Requested: '{node.name}' Current: '{cname}'")
+                # Check that the name matches
+                if node.name != cname:
+                    if self.change_node_names:
+                        LOGGER.warning(f"Existing node name '{cname}' for {address} does not match requested name '{node.name}', changing to match")
+                        try:
+                            self.poly.renameNode(address,node.name)
+                        except:
+                            LOGGER.error(f'renameNode error, which is a known issue with PG3x Version <= 3.2.7', exc_info=True)
+                    else:
+                        LOGGER.warning(f"Existing node name '{cname}' for {address} does not match requested name '{node.name}', NOT changing to match, set change_node_names=true to enable")
+                        # Change it to existing name to avoid addNode error
+                        node.name = cname
+        return gnode
 
     def smac(self,mac):
         return re.sub(r'[:]+', '', mac)
