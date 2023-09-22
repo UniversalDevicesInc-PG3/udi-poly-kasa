@@ -41,7 +41,7 @@ class SmartDeviceNode(Node):
         if self.poll:
             controller.poly.subscribe(controller.poly.POLL,   self.handler_poll)
         controller.poly.subscribe(controller.poly.START,  self.handler_start, address) 
-        controller.poly.subscribe(controller.poly.DELETE,  self.handler_delete, address) 
+        controller.poly.subscribe(controller.poly.DELETE,  self.handler_delete) 
         self.poly.ready()
 
     def handler_start(self):
