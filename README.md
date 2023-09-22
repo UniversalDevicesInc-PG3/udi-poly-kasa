@@ -128,7 +128,7 @@ The commands for these nodes
 
 # Issues
 
-If you have an issue where the nodes are not showing up properly, open the Polyglot UI and go to Kasa -> Details -> Log, and click 'Download Log Package' and send that to jimboca3@gmail.com as an email attachment, or send it in a PM [Universal Devices Forum](https://forum.universal-devices.com/messenger)
+If you have an issue where the nodes are not showing up properly, open the Polyglot UI and go to Kasa -> Details -> Log, and click 'Download Log Package' and send that to JimBo.Automates@gmail.com as an email attachment, or send it in a PM [Universal Devices Forum](https://forum.universal-devices.com/messenger)
 
 # Upgrading
 
@@ -143,6 +143,7 @@ Restart the Kasa nodeserver by selecting it in the Polyglot dashboard and select
   - Tested with python-kasa 0.5.3, hopefully this version will discover previously undiscovered devices
     - BUT this doesn't yet work for the new firmware devices, hopefully that will be released soon.
   - Added all driver names so they now show up in PG3x UI.
+  - Fix log message for "ready to poll" when device is not responding
 - 3.0.21: 03/28/2023
   - Fix dumb error in print statement added in last release
 - 3.0.20: 03/19/2023
