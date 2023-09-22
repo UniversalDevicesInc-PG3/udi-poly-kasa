@@ -58,7 +58,10 @@ class SmartDeviceNode(Node):
             self.ready_warn = True
             return False
         if self.ready_warn:
-            LOGGER.warning(f'{self.pfx} Node is now ready to poll')
+            if self.is_connected():
+                LOGGER.warning(f'{self.pfx} Node is now ready to poll')
+            else:
+                LOGGER.warning(f'{self.pfx} Node is ready to poll, but Kasa device is not responding')
             self.ready_warn = False
         # Set default for old node servers
         if self.getDriver('GV6') is None:
