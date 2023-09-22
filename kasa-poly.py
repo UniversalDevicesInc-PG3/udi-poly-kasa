@@ -9,7 +9,7 @@ import sys
 from udi_interface import Interface,LOGGER
 import time
 import warnings
-from nodes import Controller
+from nodes import VERSION,Controller
 
 def main():
     # Some are getting unclosed socket warnings due to garbage collection?? no idea why, so just ignore them since we dont' care
@@ -19,7 +19,7 @@ def main():
         sys.exit(1)
     try:
         polyglot = Interface([Controller])
-        polyglot.start()
+        polyglot.start(VERSION)
         control = Controller(polyglot, 'tplkasactl', 'tplkasactl', 'Kasa Controller')
         polyglot.runForever()
     except (KeyboardInterrupt, SystemExit):
