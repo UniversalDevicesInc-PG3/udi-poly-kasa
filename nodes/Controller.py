@@ -142,13 +142,16 @@ class Controller(Node):
             LOGGER.debug(f'checking mac={mac}')
             if self.smac(mac) in self.devm:
                 LOGGER.debug(f'already added mac={mac}')
-                # Check for a name change.
-
             else:
                 cfg = self.get_device_cfg(mac)
                 LOGGER.debug(f'cfg={cfg}')
                 if cfg is not None:
-                    LOGGER.warning(f"Adding previously known device that didn't respond to discover: {cfg}")
+                    # If it's not not in the DB, then use deleted it, so don't add it back.
+                    cname = self.poly.getNodeNameFromDb(address)
+                    if cname is None:                    
+                        LOGGER.warning(f"NOT adding previously known device that didn't respond to discover because it was deleted: {cfg}")
+                    else:
+                        LOGGER.warning(f"Adding previously known device that didn't respond to discover: {cfg}")
                     self.add_device_node(cfg=cfg)
         LOGGER.debug('exit')
         return True
@@ -178,7 +181,7 @@ class Controller(Node):
                 LOGGER.warning(f'Found a new device {dev.mac}, adding {dev.alias}')
                 self.add_device_node(dev=dev)
         except Exception as ex:
-            LOGGER.error(f'Problem adding device {dev.host}',exc_info=True)
+            LOGGER.error(f'Problem adding device {dev}',exc_info=True)
             
     def discover_new(self):
         LOGGER.info('enter')
