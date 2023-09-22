@@ -139,6 +139,7 @@ Restart the Kasa nodeserver by selecting it in the Polyglot dashboard and select
   - Fix: [change_node_names not working](https://github.com/UniversalDevicesInc-PG3/udi-poly-kasa/issues/17)
     - NOTE: You will see an error on the log related to this: ERROR    interface:_message: Failed to update internal nodelist: None :: 'NoneType' object is not subscriptable
     - This is a PG3x issue which will be fixed in the next release of PG3x after 3.2.7.
+  - Fix: [Deleted devices always return](https://github.com/UniversalDevicesInc-PG3/udi-poly-kasa/issues/14)
   - Fix adding SmartStrip Plug nodes when device is added
   - Tested with python-kasa 0.5.3, hopefully this version will discover previously undiscovered devices
     - BUT this doesn't yet work for the new firmware devices, hopefully that will be released soon.
