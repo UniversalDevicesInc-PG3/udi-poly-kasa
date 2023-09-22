@@ -41,6 +41,7 @@ class SmartDeviceNode(Node):
         if self.poll:
             controller.poly.subscribe(controller.poly.POLL,   self.handler_poll)
         controller.poly.subscribe(controller.poly.START,  self.handler_start, address) 
+        controller.poly.subscribe(controller.poly.DELETE,  self.handler_delete, address) 
         self.poly.ready()
 
     def handler_start(self):
@@ -73,6 +74,9 @@ class SmartDeviceNode(Node):
             self.longPoll()
         elif polltype == 'shortPoll':
             self.shortPoll()
+
+    def handler_delete(self):
+        LOGGER.debug(f'{self.pfx} address={self.adress}')
 
     def query(self):
         LOGGER.info(f'{self.pfx} enter')
