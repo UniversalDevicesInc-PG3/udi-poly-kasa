@@ -76,7 +76,7 @@ class SmartDeviceNode(Node):
             self.shortPoll()
 
     def handler_delete(self):
-        LOGGER.debug(f'{self.pfx} address={self.adress}')
+        LOGGER.warning(f'{self.pfx} address={self.adress}')
 
     def query(self):
         LOGGER.info(f'{self.pfx} enter')
