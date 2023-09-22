@@ -149,10 +149,10 @@ class Controller(Node):
                     # If it's not not in the DB, then use deleted it, so don't add it back.
                     cname = self.poly.getNodeNameFromDb(cfg['address'])
                     if cname is None:                    
-                        LOGGER.warning(f"NOT adding previously known device that didn't respond to discover because it was deleted: {cfg}")
+                        LOGGER.warning(f"NOT adding previously known device that didn't respond to discover because it was deleted from PG3: {cfg}")
                     else:
                         LOGGER.warning(f"Adding previously known device that didn't respond to discover: {cfg}")
-                    self.add_device_node(cfg=cfg)
+                        self.add_device_node(cfg=cfg)
         LOGGER.debug('exit')
         return True
 
