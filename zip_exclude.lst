@@ -4,3 +4,9 @@ logs/*
 *.pyc
 zip_exclude.lst
 *.zip
+python-kasa/*
+python-kasa.save/*
+*.log
+000*
+kasa
+kasa.lnk
