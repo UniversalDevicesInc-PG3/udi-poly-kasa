@@ -15,6 +15,7 @@ class SmartStripNode(SmartDeviceNode):
             {'driver': 'GV6', 'value': 1, 'uom': 2, 'name': 'Poll Device'},
         ]
         self.address = address
+        self.connected = None
         if dev is not None:
             self.host = dev.host
             cfg['emeter'] = dev.has_emeter
