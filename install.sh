@@ -1,5 +1,10 @@
 #!/usr/bin/env bash
 
+if [ -e python-kasa ]; then
+  echo "Removing python-kasa..."
+  rm -rf python-kasa
+fi
+
 #echo ""
 #if [ -e python-kasa ]; then
 #  echo "Updating python-kasa..."
