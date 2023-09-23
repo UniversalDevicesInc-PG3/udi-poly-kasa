@@ -135,11 +135,15 @@ If you have an issue where the nodes are not showing up properly, open the Polyg
 Restart the Kasa nodeserver by selecting it in the Polyglot dashboard and select Control -> Restart, then watch the log to make sure everything goes well.
 
 # Release Notes
-- 3.0.22: 09/22/2023
+- 3.1.0: 09/22/2023
+  - Added [Configuration Help](/CONFIG.md) describing all new parameters
   - Fix: [change_node_names not working](https://github.com/UniversalDevicesInc-PG3/udi-poly-kasa/issues/17)
     - NOTE: You will see an error on the log related to this: ERROR    interface:_message: Failed to update internal nodelist: None :: 'NoneType' object is not subscriptable
     - This is a PG3x issue which will be fixed in the next release of PG3x after 3.2.7.
-  - Fix: [Deleted devices always return](https://github.com/UniversalDevicesInc-PG3/udi-poly-kasa/issues/14)
+  - Fix: [Deleted devices always return(https://github.com/UniversalDevicesInc-PG3/udi-poly-kasa/i]ssues/14)
+  - Enhancement: [Add configurable discover timeout](https://github.com/UniversalDevicesInc-PG3/udi-poly-kasa/i]ssues/18)
+  - Enhancement: [Allow manually adding device host name or IP address](https://github.com/UniversalDevicesInc-PG3/udi-poly-kasa/i]ssues/9)
+    - Also allows adding extra networks to run discover on
   - Fix adding SmartStrip Plug nodes when device is added
   - Tested with python-kasa 0.5.3, hopefully this version will discover previously undiscovered devices
     - BUT this doesn't yet work for the new firmware devices, hopefully that will be released soon.

@@ -1,6 +1,6 @@
 
 from udi_interface import Node,LOGGER,Custom,LOG_HANDLER
-import logging,re,json,sys,asyncio,time
+import logging,re,json,sys,asyncio,time,os,markdown2
 from threading import Thread,Event
 from node_funcs import get_valid_node_name,get_valid_node_address
 #sys.path.insert(0,"pyHS100")
@@ -61,6 +61,10 @@ class Controller(Node):
         self.heartbeat()
         self.set_params()
         self.check_params()
+        configurationHelp = './CONFIG.md'
+        if os.path.isfile(configurationHelp):
+            cfgdoc = markdown2.markdown_path(configurationHelp)
+            self.poly.setCustomParamsDoc(cfgdoc)
         #
         # Wait for all handlers to finish
         #
@@ -108,7 +112,10 @@ class Controller(Node):
         self.in_long_poll = True
         # Heartbeat is not sent if stuck in discover or long_poll?
         self.heartbeat()
-        self.discover_new()
+        if self.auto_discover:
+            self.discover_new()
+        else:
+            LOGGER.debug(f'auto_discover disabled {self.auto_discover}')
         self.in_long_poll = False
         LOGGER.debug('exit')
 
@@ -147,10 +154,18 @@ class Controller(Node):
         
     def discover(self):
         self.devm = {}
-        LOGGER.info(f"enter: {self.poly.network_interface['broadcast']} timout=10 discovery_packets=10 mainloop={self.mainloop}")
-        future = asyncio.run_coroutine_threadsafe(self._discover(), self.mainloop)
+        LOGGER.info(f"enter: {self.poly.network_interface['broadcast']}")
+        future = asyncio.run_coroutine_threadsafe(self._discover(target=self.poly.network_interface['broadcast']), self.mainloop)
         res = future.result()
         LOGGER.debug(f'result={res}')
+        if self.manual_networks is None or len(self.manual_networks) == 0:
+            LOGGER.info("No manual networks configured")
+        else:
+            for network in self.manual_networks:
+                LOGGER.info(f"calling: _discover(target={network['address']})")
+                future = asyncio.run_coroutine_threadsafe(self._discover(target=network['address']), self.mainloop)
+                res = future.result()
+                LOGGER.debug(f'result={res}')
         self.discover_done = True
         LOGGER.info("exit")
 
@@ -162,11 +177,11 @@ class Controller(Node):
         self.devm[self.smac(dev.mac)] = True
         LOGGER.debug(f"exit: {dev}")
 
-    async def _discover(self):
-        LOGGER.debug('enter')
-        await Discover.discover(timeout=10,discovery_packets=10,target=self.poly.network_interface['broadcast'],on_discovered=self.discover_add_device)
+    async def _discover(self,target):
+        LOGGER.debug(f'enter: target={target}')
+        await Discover.discover(timeout=self.discover_timeout,discovery_packets=10,target=target,on_discovered=self.discover_add_device)
         # make sure all we know about are added in case they didn't respond this time.
-        LOGGER.info(f"Discover.discover done: checking for previously known devices")
+        LOGGER.info(f"Discover.discover({target}) done: checking for previously known devices")
         for mac in self.Data:
             LOGGER.debug(f'checking mac={mac}')
             if self.smac(mac) in self.devm:
@@ -363,7 +378,9 @@ class Controller(Node):
         # Make sure params exist
         #
         defaults = {
-            "change_node_names": "false"
+            "change_node_names": "false",
+            "discover_timeout": 10,
+            "auto_discover": "true"
         }
         for param in defaults:
             if params is None or not param in params:
@@ -391,7 +408,8 @@ class Controller(Node):
                 return
 
         self.change_node_names = True if self.Parameters['change_node_names'] == 'true' else False
-
+        self.auto_discover     = True if self.Parameters['auto_discover']     == 'true' else False
+        self.discover_timeout  = self.Parameters['discover_timeout']
         #self.check_params()
         self.handler_params_st = True
 
@@ -411,6 +429,19 @@ class Controller(Node):
                         },
                     ]
                 },
+                {
+                    'name': 'networks',
+                    'title': 'Extra Discovery Networks',
+                    'desc': 'Allow specifying other networks to run discovery',
+                    'isList': True,
+                    'params': [
+                        {
+                            'name': 'address',
+                            'title': "Broadcast Address",
+                            'isRequired': True,
+                        },
+                    ]
+                },
             ], True)
 
     def handler_typed_params(self,params):
@@ -423,7 +454,8 @@ class Controller(Node):
         self.Notices.clear()
         self.TypedData.load(params)
         LOGGER.debug(params)
-        self.manual_devices = self.TypedData['devices']
+        self.manual_devices  = self.TypedData['devices']
+        self.manual_networks = self.TypedData['networks']
         # We don't add on initial startup, wait for all startup to finish
         if (self.ready):
             # devices were changed after node server was restarted, so add them.
