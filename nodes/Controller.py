@@ -5,7 +5,7 @@ from threading import Thread,Event
 from node_funcs import get_valid_node_name,get_valid_node_address
 #sys.path.insert(0,"pyHS100")
 #from pyHS100 import Discover
-from kasa import Discover
+from kasa import Discover,SmartDevice
 from nodes import SmartStripPlugNode
 from nodes import SmartStripNode
 from nodes import SmartPlugNode
@@ -34,6 +34,10 @@ class Controller(Node):
         self.handler_params_st = None
         self.Data            = Custom(self.poly, 'customdata')
         self.handler_data_st = None
+        self.TypedParameters = Custom(poly, 'customtypedparams')
+        self.handler_typedparams_st = None
+        self.TypedData       = Custom(poly, 'customtypeddata')
+        self.handler_typeddata_st = None
         self.poly.subscribe(self.poly.START,                  self.handler_start, address) 
         self.poly.subscribe(self.poly.POLL,                   self.handler_poll)
         self.poly.subscribe(self.poly.LOGLEVEL,               self.handler_log_level)
@@ -41,6 +45,8 @@ class Controller(Node):
         self.poly.subscribe(self.poly.CUSTOMPARAMS,           self.handler_params)
         self.poly.subscribe(self.poly.CUSTOMDATA,             self.handler_data)
         self.poly.subscribe(self.poly.DISCOVER,               self.discover_new)
+        self.poly.subscribe(poly.CUSTOMTYPEDPARAMS,           self.handler_typed_params)
+        self.poly.subscribe(poly.CUSTOMTYPEDDATA,             self.handler_typed_data)
         self.poly.ready()
         self.poly.addNode(self, conn_status='ST')
 
@@ -53,12 +59,13 @@ class Controller(Node):
         self.connect_thread.start()
         self.setDriver('ST', 1)
         self.heartbeat()
+        self.set_params()
         self.check_params()
         #
         # Wait for all handlers to finish
         #
         cnt = 600
-        while ((self.handler_params_st is None or self.handler_data_st is None) and cnt > 0):
+        while ((self.handler_params_st is None or self.handler_data_st is None or self.handler_typedparams_st is None or self.handler_typeddata_st is None) and cnt > 0):
             LOGGER.warning(f'Waiting for all to be loaded params={self.handler_params_st} data={self.handler_data_st}... cnt={cnt}')
             time.sleep(1)
             cnt -= 1
@@ -70,7 +77,10 @@ class Controller(Node):
             self.discover()
         except:
             LOGGER.error(f'discover failed', exc_info=True)
-            return False
+        try:
+            self.add_manual_devices()
+        except:
+            LOGGER.error(f'add_manual_devices failed', exc_info=True)
         self.ready = True
         LOGGER.info(f'exit {self.name}')
 
@@ -116,6 +126,25 @@ class Controller(Node):
             self.reportCmd("DOF",2)
             self.hb = 0
 
+    def add_manual_devices(self):
+        if self.manual_devices is None or len(self.manual_devices) == 0:
+            LOGGER.info("No manual devices configured")
+            return
+        future = asyncio.run_coroutine_threadsafe(self._add_manual_devices(), self.mainloop)
+        res = future.result()
+        LOGGER.debug(f'result={res}')
+        self.discover_done = True
+        LOGGER.info("exit")
+
+    async def _add_manual_devices(self):
+        for mdev in self.manual_devices:
+            LOGGER.info(f"Adding manual device {mdev['address']}")
+            try:
+                dev = await Discover.discover_single(mdev['address'])
+                self.add_device_node(dev=dev)
+            except Exception as ex:
+                LOGGER.error(f"{ex} trying to connect to {mdev['address']}",exc_info=False) 
+        
     def discover(self):
         self.devm = {}
         LOGGER.info(f"enter: {self.poly.network_interface['broadcast']} timout=10 discovery_packets=10 mainloop={self.mainloop}")
@@ -365,6 +394,41 @@ class Controller(Node):
 
         #self.check_params()
         self.handler_params_st = True
+
+    def set_params(self):
+        self.TypedParameters.load( 
+            [
+                {
+                    'name': 'devices',
+                    'title': 'Kasa Devices',
+                    'desc': 'Allow adding Kasa Devices manually',
+                    'isList': True,
+                    'params': [
+                        {
+                            'name': 'address',
+                            'title': "Device host or IP",
+                            'isRequired': True,
+                        },
+                    ]
+                },
+            ], True)
+
+    def handler_typed_params(self,params):
+        LOGGER.debug(f'Loading typed params now {params}')
+        self.handler_typedparams_st = True
+        return
+
+    def handler_typed_data(self,params):
+        LOGGER.debug(f'Loading typed data now {params}')
+        self.Notices.clear()
+        self.TypedData.load(params)
+        LOGGER.debug(params)
+        self.manual_devices = self.TypedData['devices']
+        # We don't add on initial startup, wait for all startup to finish
+        if (self.ready):
+            # devices were changed after node server was restarted, so add them.
+            self.add_manual_devices()
+        self.handler_typeddata_st = True
 
     def handler_log_level(self,level):
         LOGGER.info(f'enter: level={level}')
