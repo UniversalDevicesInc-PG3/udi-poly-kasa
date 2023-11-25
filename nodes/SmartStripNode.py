@@ -100,7 +100,9 @@ class SmartStripNode(SmartDeviceNode):
         LOGGER.debug(f'{self.pfx} enter: {self.dev}')
         # Check if any node is on, update their status
         for node in self.child_nodes:
-            if int(node.getDriver('ST')) > 0:
+            if node.getDriver('ST') is None:
+                LOGGER.warning(f'{self.pfx} node ST is None {node.name}')
+            elif int(node.getDriver('ST')) > 0:
                 LOGGER.debug(f'{self.pfx} node is on {node.name}')
                 self.set_on()
                 return

@@ -135,6 +135,8 @@ If you have an issue where the nodes are not showing up properly, open the Polyg
 Restart the Kasa nodeserver by selecting it in the Polyglot dashboard and select Control -> Restart, then watch the log to make sure everything goes well.
 
 # Release Notes
+- 3.1.1: 11/25/2023
+  - Fix: [Crash on startup when poll is called on smartstrip](https://github.com/UniversalDevicesInc-PG3/udi-poly-kasa/issues/19)
 - 3.1.0: 09/22/2023
   - Added [Configuration Help](/CONFIG.md) describing all new parameters
   - Fix: [change_node_names not working](https://github.com/UniversalDevicesInc-PG3/udi-poly-kasa/issues/17)
