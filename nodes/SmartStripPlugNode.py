@@ -15,6 +15,9 @@ class SmartStripPlugNode(SmartDeviceNode):
         self.debug_level = 0
         self.name = name
         self.primary_node = controller.poly.getNode(primary)
+        self.pfx = f"{self.primary_node.name}:{self.name}:"
+        # We let our parent handle the polling
+        self.poll = False
         # All devices have these.
         self.drivers = [
             {'driver': 'ST', 'value': 0, 'uom': 51, 'name': 'State'},
@@ -27,7 +30,6 @@ class SmartStripPlugNode(SmartDeviceNode):
                 self.id += 'E'
             else:
                 self.id += 'N'
-        self.poll = False
         super().__init__(controller, primary, address, name, dev, cfg)
 
     def start(self):
@@ -36,7 +38,9 @@ class SmartStripPlugNode(SmartDeviceNode):
         LOGGER.debug(f'exit: {self.dev}')
 
     def query(self):
+        LOGGER.debug(f'{self.pfx} enter')
         super().query()
+        LOGGER.debug(f'{self.pfx} exit')
 
     async def connect_a(self):
         # TODO: Confirm parent is connected?

@@ -15,9 +15,11 @@ class SmartDeviceNode(Node):
         self.name = name
         self.dev  = dev
         self.cfg  = cfg
+        # All devices call poll by default
         if not hasattr(self,'poll'):
             self.poll = True
-        self.pfx = f"{self.name}:"
+        if not hasattr(self,'pfx'):
+            self.pfx = f"{self.name}:"
         LOGGER.debug(f'{self.pfx} dev={dev}')
         LOGGER.debug(f'{self.pfx} cfg={cfg}')
         self.ready = False
@@ -53,7 +55,10 @@ class SmartDeviceNode(Node):
         LOGGER.debug(f'exit: {self.name} dev={self.dev}')
 
     def handler_poll(self, polltype):
-        LOGGER.debug(f'{self.pfx} poll={self.poll}')
+        LOGGER.debug(f'{self.pfx}')
+        if self.get_mon == 0:
+            LOGGER.debug(f'{self.pfx} Node poll is turned off')
+            return
         if not self.ready:
             LOGGER.warning(f'{self.pfx} Node not ready to poll, must be disconnected or slow to respond?')
             self.ready_warn = True
@@ -64,12 +69,6 @@ class SmartDeviceNode(Node):
             else:
                 LOGGER.warning(f'{self.pfx} Node is ready to poll, but Kasa device is not responding')
             self.ready_warn = False
-        # Set default for old node servers
-        if self.getDriver('GV6') is None:
-            self.setDriver('GV6',1)
-        if self.getDriver('GV6') == 0:
-            LOGGER.debug(f'{self.pfx} Node poll is turned off')
-            return
         if polltype == 'longPoll':
             self.longPoll()
         elif polltype == 'shortPoll':
@@ -333,13 +332,18 @@ class SmartDeviceNode(Node):
     def is_connected(self):
         return self.connected
 
+    def get_mon(self):
+        LOGGER.debug(f'{self.pfx}')
+        val = self.getDriver('GV6')
+        if val is None:
+            val = 1
+        LOGGER.debug(f'{self.pfx} val={val}')
+        return val
+
     def set_mon(self,val=None):
         LOGGER.debug(f'{self.pfx} val={val}')
         if val is None:
-            val = self.getDriver('GV6')
-            if val is None:
-                val = 1
-            LOGGER.debug(f'{self.pfx} val={val}')
+            val = self.get_mon()
         self.setDriver('GV6',val)
 
     def cmd_set_on(self, command):

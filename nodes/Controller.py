@@ -23,7 +23,6 @@ class Controller(Node):
 
     def __init__(self, poly, primary, address, name):
         super(Controller, self).__init__(poly, primary, address, name)
-        self.poll    = False
         self.ready   = False
         self.hb = 0
         self.nodes_by_mac = {}
@@ -125,7 +124,7 @@ class Controller(Node):
         self.check_params()
 
     def heartbeat(self):
-        LOGGER.debug('hb={self.hb}')
+        LOGGER.debug(f'hb={self.hb}')
         if self.hb == 0:
             self.reportCmd("DON",2)
             self.hb = 1

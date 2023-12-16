@@ -64,6 +64,13 @@ class SmartStripNode(SmartDeviceNode):
             self.set_st_from_children()
         LOGGER.debug(f'{self.pfx} exit:  dev={self.dev}')
 
+    async def _set_energy_a(self):
+        LOGGER.debug(f'{self.pfx} enter: dev={self.dev}')
+        await super()._set_energy_a()
+        for node in self.child_nodes:
+            await node._set_energy_a()
+        LOGGER.debug(f'{self.pfx} exit:  dev={self.dev}')
+
     # Called when connected is changed from False to True
     # On initial startup or a reconnect later
     def reconnected(self):
