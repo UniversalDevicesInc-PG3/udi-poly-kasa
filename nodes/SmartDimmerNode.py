@@ -1,7 +1,7 @@
 #
 # TP Link Kasa Smart Dimmer Node
 #
-# This code is used for dimmers (HS220)
+# This code is used for dimmers (HS220) and switches (HS200)
 #
 from udi_interface import Node,LOGGER
 import asyncio
@@ -24,7 +24,7 @@ class SmartDimmerNode(SmartDeviceNode):
         if dev is not None:
             # Figure out the id based in the device info
             self.id = 'SmartDimmer_'
-            if dev.is_dimmable:
+            if self.is_dimmable(dev):
                 self.id += 'D'
                 self.drivers.append({'driver': 'GV5', 'value': 0, 'uom': 100, 'name': 'Brightness'})
             else:

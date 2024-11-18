@@ -5,7 +5,8 @@ from threading import Thread,Event
 from node_funcs import get_valid_node_name,get_valid_node_address
 #sys.path.insert(0,"pyHS100")
 #from pyHS100 import Discover
-from kasa import Discover,SmartDevice
+from kasa import Discover,Credentials
+from kasa.exceptions import *
 from nodes import SmartStripPlugNode
 from nodes import SmartStripNode
 from nodes import SmartPlugNode
@@ -46,11 +47,13 @@ class Controller(Node):
         self.poly.subscribe(self.poly.DISCOVER,               self.discover_new)
         self.poly.subscribe(poly.CUSTOMTYPEDPARAMS,           self.handler_typed_params)
         self.poly.subscribe(poly.CUSTOMTYPEDDATA,             self.handler_typed_data)
+        self.credentials = Credentials("jimsearle@gmail.com", "MyKasaHome14")
         self.poly.ready()
         self.poly.addNode(self, conn_status='ST')
 
     def handler_start(self):
         LOGGER.info(f"Started Kasa PG3 NodeServer {self.poly.serverdata['version']}")
+        self.update_profile()
         self.Notices.clear()
         self.mainloop = mainloop
         asyncio.set_event_loop(mainloop)
@@ -146,7 +149,7 @@ class Controller(Node):
         for mdev in self.manual_devices:
             LOGGER.info(f"Adding manual device {mdev['address']}")
             try:
-                dev = await Discover.discover_single(mdev['address'])
+                dev = await self.discover_single(address=mdev['address'])
                 self.add_device_node(dev=dev)
             except Exception as ex:
                 LOGGER.error(f"{ex} trying to connect to {mdev['address']}",exc_info=False) 
@@ -168,17 +171,43 @@ class Controller(Node):
         self.discover_done = True
         LOGGER.info("exit")
 
+    # We have this in controller so all error handling is in one
+    # place and we need ability to update device before the node
+    # is created.  The SmartDeviceNode calls this update.
+    async def update_dev(self,dev):
+        LOGGER.debug(f"enter: {dev}")
+        ret = False
+        try:
+            await dev.update()
+            ret = True
+        except AuthenticationError as msg:
+            LOGGER.error(f'Failed to authenticate {dev}: {msg}')
+        except Exception as ex:
+            LOGGER.error(f"Failed to update {ex}: {dev}", exc_info=True)
+        LOGGER.debug(f'update_dev:exit:{ret} {dev}')
+        LOGGER.debug(f"exit:{ret} {dev}")
+        return ret
+
     async def discover_add_device(self,dev):
         LOGGER.debug(f"enter: {dev}")
         LOGGER.info(f"Got Device\n\tAlias:{dev.alias}\n\tModel:{dev.model}\n\tMac:{dev.mac}\n\tHost:{dev.host}")
+        if not await self.update_dev(dev):
+            return False
         self.add_device_node(dev=dev)
         # Add to our list of added devices
         self.devm[self.smac(dev.mac)] = True
         LOGGER.debug(f"exit: {dev}")
+        return True
 
     async def _discover(self,target):
         LOGGER.debug(f'enter: target={target}')
-        await Discover.discover(timeout=self.discover_timeout,discovery_packets=10,target=target,on_discovered=self.discover_add_device)
+        await Discover.discover(
+            credentials=self.credentials,
+            timeout=self.discover_timeout,
+            discovery_packets=10,
+            target=target,
+            on_discovered=self.discover_add_device
+            )
         # make sure all we know about are added in case they didn't respond this time.
         LOGGER.info(f"Discover.discover({target}) done: checking for previously known devices")
         for mac in self.Data:
@@ -189,7 +218,7 @@ class Controller(Node):
                 cfg = self.get_device_cfg(mac)
                 LOGGER.debug(f'cfg={cfg}')
                 if cfg is not None:
-                    # If it's not not in the DB, then use deleted it, so don't add it back.
+                    # If it's not not in the DB, then user deleted it, so don't add it back.
                     cname = self.poly.getNodeNameFromDb(cfg['address'])
                     if cname is None:                    
                         LOGGER.warning(f"NOT adding previously known device that didn't respond to discover because it was deleted from PG3: {cfg}")
@@ -197,7 +226,7 @@ class Controller(Node):
                         LOGGER.warning(f"Adding previously known device that didn't respond to discover: {cfg}")
                         self.add_device_node(cfg=cfg)
         LOGGER.debug('exit')
-        return True
+        #return True
 
     async def discover_new_add_device(self,dev):
         try:
@@ -205,7 +234,8 @@ class Controller(Node):
             smac = self.smac(dev.mac)
             LOGGER.debug(f'enter: mac={smac} dev={dev}')
             # Known Device?
-            await dev.update()
+            if not await self.update_dev(dev):
+                return False
             LOGGER.debug(f'mac={smac} dev={dev}')
             if smac in self.nodes_by_mac:
                 node = self.nodes_by_mac[smac]
@@ -224,8 +254,18 @@ class Controller(Node):
                 LOGGER.warning(f'Found a new device {dev.mac}, adding {dev.alias}')
                 self.add_device_node(dev=dev)
         except Exception as ex:
-            LOGGER.error(f'{ex} {dev}',exc_info=False)
+            LOGGER.error(f'{ex} {dev}',exc_info=True)
             
+    async def discover_single(self, host=None):
+        LOGGER.debug(f'enter: host={host}')
+        dev = await Discover.discover_single(
+            host,
+            credentials=self.credentials,
+            )
+        LOGGER.debug(f'exit: dev={dev}')
+        return dev
+
+
     def discover_new(self):
         LOGGER.info('enter')
         if not self.ready:
@@ -237,7 +277,11 @@ class Controller(Node):
         LOGGER.info("exit")
 
     async def _discover_new_a(self):
-        await Discover.discover(target=self.poly.network_interface['broadcast'],on_discovered=self.discover_new_add_device)
+        await Discover.discover(
+            credentials=self.credentials,
+            target=self.poly.network_interface['broadcast'],
+            on_discovered=self.discover_new_add_device
+            )
 
     # Add a node based on dev returned from discover or the stored config.
     def add_device_node(self, parent=None, address_suffix_num=None, dev=None, cfg=None):
@@ -246,29 +290,16 @@ class Controller(Node):
             parent = self
         if dev is not None:
             mac  = dev.mac
-            if dev.is_bulb:
-                type = 'SmartBulb'
-                name = dev.alias
+            type = str(dev.device_type)
+            if hasattr(dev,'alias'):
+                name = dev.alias 
             elif dev.is_strip:
-                type = 'SmartStrip'
                 # SmartStrip doesn't have an alias so use the mac
                 name = get_valid_node_name(f'SmartStrip {mac}')
-            elif dev.is_plug:
-                type = 'SmartPlug'
-                name = dev.alias
-            elif dev.is_strip_socket:
-                type = 'SmartStripPlug'
-                name = dev.alias
-            elif dev.is_light_strip:
-                type = 'SmartLightStrip'
-                name = dev.alias
-            elif dev.is_dimmable:
-                type = 'SmartDimmer'
-                name = dev.alias
             else:
-                LOGGER.error(f"What is this? {dev}")
+                LOGGER.error(f"What is this device with no alias? {dev}")
                 return False
-            LOGGER.info(f"Got a {type}")
+            LOGGER.info(f"Got a {type}: {dev}")
             if address_suffix_num is None:
                 address = get_valid_node_address(mac)
             else:
@@ -287,21 +318,24 @@ class Controller(Node):
         if cfg['name'] is None:
             LOGGER.error(f'Refusing to add node with name None!')
             return False
-        if cfg['type'] == 'SmartPlug':
-            self.add_node(cfg['address'],SmartPlugNode(self, parent.address, cfg['address'], cfg['name'], dev=dev, cfg=cfg))
-        elif cfg['type'] == 'SmartStrip':
-            self.add_node(cfg['address'],SmartStripNode(self, cfg['address'], cfg['name'],  dev=dev, cfg=cfg))
-        elif cfg['type'] == 'SmartStripPlug':
-            self.add_node(cfg['address'],SmartStripPlugNode(self, parent.address, cfg['address'], cfg['name'],  dev=dev, cfg=cfg))
-        elif cfg['type'] == 'SmartDimmer':
-            self.add_node(cfg['address'],SmartDimmerNode(self, parent.address, cfg['address'], cfg['name'], dev=dev, cfg=cfg))
-        elif cfg['type'] == 'SmartBulb':
-            self.add_node(cfg['address'],SmartBulbNode(self, parent.address, cfg['address'], cfg['name'], dev=dev, cfg=cfg))
-        elif cfg['type'] == 'SmartLightStrip':
-            self.add_node(cfg['address'],SmartLightStripNode(self, parent.address, cfg['address'], cfg['name'], dev=dev, cfg=cfg))
-        else:
-            LOGGER.error(f"Device type not yet supported: {cfg['type']}")
-            return False
+        try:
+            if cfg['type'] == 'SmartPlug' or cfg['type'] == 'DeviceType.Plug':
+                self.add_node(cfg['address'],SmartPlugNode(self, parent.address, cfg['address'], cfg['name'], dev=dev, cfg=cfg))
+            elif cfg['type'] == 'SmartStrip' or cfg['type'] == 'DeviceType.Strip':
+                self.add_node(cfg['address'],SmartStripNode(self, cfg['address'], cfg['name'],  dev=dev, cfg=cfg))
+            elif cfg['type'] == 'SmartStripPlug' or cfg['type'] == 'DeviceType.StripSocket':
+                self.add_node(cfg['address'],SmartStripPlugNode(self, parent.address, cfg['address'], cfg['name'],  dev=dev, cfg=cfg))
+            elif cfg['type'] == 'SmartDimmer' or cfg['type'] == 'DeviceType.WallSwitch':
+                self.add_node(cfg['address'],SmartDimmerNode(self, parent.address, cfg['address'], cfg['name'], dev=dev, cfg=cfg))
+            elif cfg['type'] == 'SmartBulb' or cfg['type'] == 'DeviceType.Bulb':
+                self.add_node(cfg['address'],SmartBulbNode(self, parent.address, cfg['address'], cfg['name'], dev=dev, cfg=cfg))
+            elif cfg['type'] == 'SmartLightStrip' or cfg['type'] == 'DeviceType.LightStrip':
+                self.add_node(cfg['address'],SmartLightStripNode(self, parent.address, cfg['address'], cfg['name'], dev=dev, cfg=cfg))
+            else:
+                LOGGER.error(f"Device type not yet supported: {cfg['type']}")
+                return False
+        except:
+                LOGGER.error(f'Failed adding dev={dev}', exc_info=True)
         node = self.poly.getNode(cfg['address'])
         if node is None:
             LOGGER.error(f"Unable to retrieve node address {cfg['address']} for {type} returned {node}")
@@ -479,8 +513,7 @@ class Controller(Node):
 
     def update_profile(self):
         LOGGER.info('start')
-        st = self.poly.updateProfile()
-        return st
+        return self.poly.updateProfile()
 
     def _cmd_query_all(self,command):
         self.query()

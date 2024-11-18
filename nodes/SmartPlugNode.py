@@ -23,18 +23,15 @@ class SmartPlugNode(SmartDeviceNode):
         if dev is not None:
             # Figure out the id based in the device info
             self.id = 'SmartPlug_'
-            if dev.is_dimmable:
+            if self.is_dimmable(dev):
                 self.id += 'D'
             else:
-                self.id += 'N'
+              self.id += 'N'
             if dev.has_emeter:
                 self.id += 'E'
             else:
                 self.id += 'N'
         super().__init__(controller, primary, address, name, dev, cfg)
-
-    def newdev(self):
-        return SmartPlug(self.host)
 
     def cmd_set_on(self,command):
         super().cmd_set_on(command)

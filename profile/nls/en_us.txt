@@ -68,9 +68,11 @@ ST-spe-TPW-NAME = Total Power Used
 
 # SmartDimmer's
 ND-SmartDimmer_DN-NAME = SmartDimmer 
+ND-SmartDimmer_NN-NAME = SmartSwitch
 ND-SmartDimmer_DE-NAME = SmartDimmer Energy
-ND-SmartDimmer_DN-ICON = GenericCtl
-ND-SmartDimmer_DE-ICON = GenericCtl
+ND-SmartDimmer_DN-ICON = Switch
+ND-SmartDimmer_NN-ICON = Switch
+ND-SmartDimmer_DE-ICON = Switch
 ST-sd-GV5-NAME = Brightness
 ST-sde-GV5-NAME = Brightness
 ST-sde-CC-NAME = Current

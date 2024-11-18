@@ -259,6 +259,24 @@
         </cmds>
     </nodeDef>
 
+    <!-- SmartDimmer_NN - Non-Dimmable, No Emeter -->
+    <nodeDef id="SmartDimmer_NN" nls="spd">
+        <editors />
+        <sts>
+            <st id="ST" editor="HCLST" />
+            <st id="GV0" editor="bool" />
+            <st id="GV6" editor="bool" />
+        </sts>
+        <cmds>
+            <sends />
+            <accepts>
+                <cmd id="QUERY" />
+                <cmd id="DON" />
+                <cmd id="DOF" />
+            </accepts>
+        </cmds>
+    </nodeDef>
+
     <!-- Bulb - Just a bulb, does it even exist? -->
     <nodeDef id="SmartBulb_NNNN" nls="sb">
         <editors />

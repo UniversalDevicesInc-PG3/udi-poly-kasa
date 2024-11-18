@@ -31,11 +31,11 @@ class SmartBulbNode(SmartDeviceNode):
                 self.id += 'D'
             else:
                 self.id += 'N'
-            if dev.is_variable_color_temp:
+            if self.is_variable_color_temp(dev):
                 self.id += 'T'
             else:
                 self.id += 'N'
-            if dev.is_color:
+            if self.is_color(dev):
                 self.id += 'C'
             else:
                 self.id += 'N'
@@ -44,8 +44,8 @@ class SmartBulbNode(SmartDeviceNode):
             else:
                 self.id += 'N'
             cfg['emeter'] = dev.has_emeter
-            cfg['color']  = dev.is_color
-            cfg['color_temp'] = dev.is_variable_color_temp
+            cfg['color']  = self.is_color(dev)
+            cfg['color_temp'] = self.is_variable_color_temp(dev)
         else:
             self.id = cfg['id']
         if cfg['color_temp']:
@@ -68,7 +68,7 @@ class SmartBulbNode(SmartDeviceNode):
 
     async def brt_a(self):
         LOGGER.debug(f'{self.pfx} enter')
-        await self.dev.update()
+        await self.dev_update()
         self.brightness = st2bri(self.dev.brightness)
         if self.brightness <= 255:
             nv = self.brightness + 15
@@ -79,7 +79,7 @@ class SmartBulbNode(SmartDeviceNode):
 
     async def dim_a(self):
         LOGGER.debug(f'{self.pfx} enter')
-        await self.dev.update()
+        await self.dev_update()
         self.brightness = st2bri(self.dev.brightness)
         if self.brightness > 0:
             nv = self.brightness - 15
@@ -90,7 +90,7 @@ class SmartBulbNode(SmartDeviceNode):
 
     async def set_hue_a(self,val):
         LOGGER.debug(f'{self.pfx} val={val}')
-        await self.dev.update()
+        await self.dev_update()
         hsv = list(self.dev.hsv)
         await self.dev.set_hsv(hue=val, saturation=hsv[1], value=hsv[2])
         self.setDriver('GV3',val)
@@ -98,7 +98,7 @@ class SmartBulbNode(SmartDeviceNode):
 
     async def set_sat_a(self,val):
         LOGGER.debug(f'{self.pfx} val={val}')
-        await self.dev.update()
+        await self.dev_update()
         hsv = list(self.dev.hsv)
         await self.dev.set_hsv(hue=hsv[0], saturation=bri2st(val), value=hsv[2])
         self.setDriver('GV4',st2bri(val))
@@ -106,7 +106,7 @@ class SmartBulbNode(SmartDeviceNode):
 
     async def set_color_temp_a(self,val):
         LOGGER.debug(f'{self.pfx} val={val}')
-        if not self.dev.is_variable_color_temp:
+        if not self.is_variable_color_temp(self.dev):
             LOGGER.error('{self.pfx} Color Temperature Not supported on this device?')
             return False
         self.setDriver('CLITEMP',self.dev.color_temp)
@@ -115,7 +115,7 @@ class SmartBulbNode(SmartDeviceNode):
 
     async def set_color_temp_brightness_a(self,color_temp,brightness,duration):
         LOGGER.debug(f'{self.pfx} color_temp={color_temp} brightness={brightness} duration={duration}')
-        if not self.dev.is_variable_color_temp:
+        if not self.is_variable_color_temp(dev):
             LOGGER.error(f'{self.pfx} Color Temperature Not supported on this device?')
             return False
         light_state = await self.dev.get_light_state()
@@ -131,7 +131,7 @@ class SmartBulbNode(SmartDeviceNode):
         light_state['color_temp'] = color_temp
         LOGGER.debug(f'{self.pfx}     new_state={light_state}')
         try:
-            await self.dev.set_light_state(light_state)
+            await self.dev._deprecated_set_light_state(light_state)
         except SmartDeviceException as ex:
             LOGGER.error(f'{self.pfx} failed: {ex}')
         await self.set_state_a()
@@ -146,7 +146,7 @@ class SmartBulbNode(SmartDeviceNode):
 
     async def set_color_rgb_a(self,red,green,blue,brightness,duration):
         LOGGER.debug(f'{self.pfx} red={red} green={green} blue={blue} brightness={brightness} duration={duration}')
-        if not self.dev.is_color:
+        if not self.is_color(self.dev):
             LOGGER.error(f'{self.pfx} Color not supported on this device?')
             return False
         hsv = rgb2hsv(red,green,blue)
@@ -165,7 +165,7 @@ class SmartBulbNode(SmartDeviceNode):
 
     async def set_color_hsv_a(self,hue,saturation,brightness,duration):
         LOGGER.debug(f'{self.pfx} hue={hue} saturation={saturation} brightness={brightness} duration={duration}')
-        if not self.dev.is_color:
+        if not self.is_color(self.dev):
             LOGGER.error(f'{self.pfx} Color not supported on this device?')
             return False
         light_state = await self.dev.get_light_state()
@@ -180,9 +180,6 @@ class SmartBulbNode(SmartDeviceNode):
             LOGGER.error(f'{self.pfx} failed: {ex}')
         await self.dev.set_hsv(hue=hue, saturation=bri2st(saturation), value=bri2st(brightness))
         await self.set_state_a()
-
-    def newdev(self):
-        return SmartBulb(self.host)
 
     def cmd_set_on(self, command):
         self.set_on()
@@ -240,7 +237,8 @@ class SmartBulbNode(SmartDeviceNode):
         fut = asyncio.run_coroutine_threadsafe(
             self.set_color_temp_brightness_a(
                 int(query.get('K.uom26')),
-                int(query.get('BR.uom100'))
+                int(query.get('BR.uom100')),
+                int(query.get('D.uom42'))
             ), 
             self.controller.mainloop
         )

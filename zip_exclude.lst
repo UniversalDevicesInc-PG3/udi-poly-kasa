@@ -8,5 +8,6 @@ python-kasa/*
 python-kasa.save/*
 *.log
 000*
-kasa
-kasa.lnk
+kasa/*
+kasa.lnk/*
+

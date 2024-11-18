@@ -22,11 +22,11 @@ class SmartLightStripNode(SmartBulbNode):
                 id += 'D'
             else:
                 id += 'N'
-            if dev.is_variable_color_temp:
+            if self.is_variable_color_temp(dev):
                 id += 'T'
             else:
                 id += 'N'
-            if dev.is_color:
+            if self.is_color(dev):
                 id += 'C'
             else:
                 id += 'N'
@@ -35,8 +35,8 @@ class SmartLightStripNode(SmartBulbNode):
             else:
                 id += 'N'
             cfg['emeter'] = dev.has_emeter
-            cfg['color']  = dev.is_color
-            cfg['color_temp'] = dev.is_variable_color_temp
+            cfg['color']  = self.is_color(dev)
+            cfg['color_temp'] = self.is_variable_color_temp(dev)
         else:
             id = cfg['id']
         LOGGER.debug(f'enter:xxx address={address} name={name}')
@@ -47,6 +47,3 @@ class SmartLightStripNode(SmartBulbNode):
             self.drivers.append({'driver': 'GV4', 'value': 0, 'uom': 100, 'name': 'Saturation'})
         super().__init__(controller, primary, address, name, dev, cfg)
         self.id = id
-        
-    def newdev(self):
-        return SmartLightStrip(self.host)
