@@ -456,7 +456,6 @@ class Controller(Node):
             self.credentials = Credentials('none','none')
         else:
             if self.credential_error:
-                LOGGER.error("Clear credentials")
                 self.poly.Notices.delete('credentials')
             self.credential_error = False
             self.credentials = Credentials(self.Parameters['user'],self.Parameters['password'])
