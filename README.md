@@ -135,7 +135,7 @@ If you have an issue where the nodes are not showing up properly, open the Polyg
 Restart the Kasa nodeserver by selecting it in the Polyglot dashboard and select Control -> Restart, then watch the log to make sure everything goes well.
 
 # Release Notes
-- 3.2.0: 11/17/2024
+- 3.2.1: 11/17/2024
   - BETA: Please only install to test
   - Upgrade to python-kasa 0.7 but requires the a bug fix which should be in 0.7.8
 - 3.1.4: 12/18/2023

@@ -29,6 +29,7 @@ class Controller(Node):
         self.nodes_by_mac = {}
         self.discover_done = False
         self.in_long_poll  = False
+        self.credential_error = False
         self.Notices         = Custom(self.poly, 'notices')
         self.Parameters      = Custom(self.poly, 'customparams')
         self.handler_params_st = None
@@ -47,7 +48,6 @@ class Controller(Node):
         self.poly.subscribe(self.poly.DISCOVER,               self.discover_new)
         self.poly.subscribe(poly.CUSTOMTYPEDPARAMS,           self.handler_typed_params)
         self.poly.subscribe(poly.CUSTOMTYPEDDATA,             self.handler_typed_data)
-        self.credentials = Credentials("jimsearle@gmail.com", "MyKasaHome14")
         self.poly.ready()
         self.poly.addNode(self, conn_status='ST')
 
@@ -406,14 +406,15 @@ class Controller(Node):
     def handler_params(self,params):
         LOGGER.debug(f'enter: Loading typed data now {params}')
         self.Parameters.load(params)
-        self.poly.Notices.clear()
         #
         # Make sure params exist
         #
         defaults = {
             "change_node_names": "false",
             "discover_timeout": 10,
-            "auto_discover": "true"
+            "auto_discover": "true",
+            'user': '',
+            'password': "",
         }
         for param in defaults:
             if params is None or not param in params:
@@ -443,6 +444,22 @@ class Controller(Node):
         self.change_node_names = True if self.Parameters['change_node_names'] == 'true' else False
         self.auto_discover     = True if self.Parameters['auto_discover']     == 'true' else False
         self.discover_timeout  = self.Parameters['discover_timeout']
+        #
+        # Build our credentials
+        #
+        if ( self.Parameters['user'] == "" or self.Parameters['password'] == ""):
+            if not self.credential_error:
+                msg = f"Must Enter Kasa user and password if using newer devices, use none/none if you don't have any"
+                self.poly.Notices['credentials'] = msg
+                LOGGER.error(msg)
+            self.credential_error = True
+            self.credentials = Credentials('none','none')
+        else:
+            if self.credential_error:
+                LOGGER.error("Clear credentials")
+                self.poly.Notices.delete('credentials')
+            self.credential_error = False
+            self.credentials = Credentials(self.Parameters['user'],self.Parameters['password'])
         #self.check_params()
         self.handler_params_st = True
 
@@ -484,9 +501,9 @@ class Controller(Node):
 
     def handler_typed_data(self,params):
         LOGGER.debug(f'Loading typed data now {params}')
-        self.Notices.clear()
         self.TypedData.load(params)
         LOGGER.debug(params)
+
         self.manual_devices  = self.TypedData['devices']
         self.manual_networks = self.TypedData['networks']
         # We don't add on initial startup, wait for all startup to finish

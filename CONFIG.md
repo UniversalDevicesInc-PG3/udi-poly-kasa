@@ -15,6 +15,14 @@ Long poll does the following
 
 ### Custom Params
 
+#### `user`
+
+Your Kasa User Name
+
+#### `password`
+
+Your Kasa User Password
+
 #### `change_node_names`
 
 If set to true the IoX node nodes are changed to match the Kasa device names when the node server is restarted.
