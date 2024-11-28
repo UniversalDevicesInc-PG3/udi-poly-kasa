@@ -135,9 +135,9 @@ If you have an issue where the nodes are not showing up properly, open the Polyg
 Restart the Kasa nodeserver by selecting it in the Polyglot dashboard and select Control -> Restart, then watch the log to make sure everything goes well.
 
 # Release Notes
-- 3.2.1: 11/17/2024
+- 3.2.2: 11/17/2024
   - BETA: Please only install to test
-  - Upgrade to python-kasa 0.7 but requires the a bug fix which should be in 0.7.8
+  - Upgrade to python-kasa>=0.8.0<0.9.0
 - 3.1.4: 12/18/2023
   - Fix: [HS300 outlet power not updated on longpoll or query all](https://github.com/UniversalDevicesInc-PG3/udi-poly-kasa/issues/20)
 - 3.1.3: 12/05/2023
