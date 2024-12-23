@@ -1,4 +1,4 @@
-udi_interface>=3.3.14
+udi_interface >= 3.3.14
 deprecation
-python-kasa>=0.8.0<0.9.0
+python-kasa >= 0.8.0, < 0.9.0
 mashumaro
