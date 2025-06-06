@@ -10,4 +10,5 @@ python-kasa.save/*
 000*
 kasa/*
 kasa.lnk/*
-
+svc.pid
+*.lock
