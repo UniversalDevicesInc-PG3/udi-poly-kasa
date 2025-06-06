@@ -1,4 +1,5 @@
 udi_interface >= 3.3.14
 deprecation
-python-kasa >= 0.8.0, < 0.9.0
+python-kasa >= 0.10.0, < 0.11.0
 mashumaro
+async_timeout

@@ -338,7 +338,9 @@ class SmartDeviceNode(Node):
             LOGGER.debug(f"{self.pfx} save_cfg {st}")
             try:
                 self.cfg['host']  = self.dev.host
-                self.cfg['model'] = self.dev.model
+                # Can't update host if not connected.
+                if st:
+                    self.cfg['model'] = self.dev.model
                 self.controller.save_cfg(self.cfg)
             except SmartDeviceException as ex:
                 LOGGER.error(f'{self.pfx} failed: {ex}')

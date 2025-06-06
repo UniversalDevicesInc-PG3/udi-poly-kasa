@@ -3,9 +3,7 @@ from udi_interface import Node,LOGGER,Custom,LOG_HANDLER
 import logging,re,json,sys,asyncio,time,os,markdown2
 from threading import Thread,Event
 from node_funcs import get_valid_node_name,get_valid_node_address
-#sys.path.insert(0,"pyHS100")
-#from pyHS100 import Discover
-from kasa import Discover,Credentials
+import kasa
 from kasa.exceptions import *
 from nodes import SmartStripPlugNode
 from nodes import SmartStripNode
@@ -53,6 +51,7 @@ class Controller(Node):
 
     def handler_start(self):
         LOGGER.info(f"Started Kasa PG3 NodeServer {self.poly.serverdata['version']}")
+        LOGGER.info(f"Kasa Library Version {kasa.__version__}")
         self.update_profile()
         self.Notices.clear()
         self.mainloop = mainloop
@@ -201,7 +200,7 @@ class Controller(Node):
 
     async def _discover(self,target):
         LOGGER.debug(f'enter: target={target}')
-        await Discover.discover(
+        await kasa.Discover.discover(
             credentials=self.credentials,
             timeout=self.discover_timeout,
             discovery_packets=10,
@@ -209,7 +208,7 @@ class Controller(Node):
             on_discovered=self.discover_add_device
             )
         # make sure all we know about are added in case they didn't respond this time.
-        LOGGER.info(f"Discover.discover({target}) done: checking for previously known devices")
+        LOGGER.info(f"kasa.Discover.discover({target}) done: checking for previously known devices")
         for mac in self.Data:
             LOGGER.debug(f'checking mac={mac}')
             if self.smac(mac) in self.devm:
@@ -258,7 +257,7 @@ class Controller(Node):
             
     async def discover_single(self, host=None):
         LOGGER.debug(f'enter: host={host}')
-        dev = await Discover.discover_single(
+        dev = await kasa.Discover.discover_single(
             host,
             credentials=self.credentials,
             )
@@ -277,7 +276,7 @@ class Controller(Node):
         LOGGER.info("exit")
 
     async def _discover_new_a(self):
-        await Discover.discover(
+        await kasa.Discover.discover(
             credentials=self.credentials,
             target=self.poly.network_interface['broadcast'],
             on_discovered=self.discover_new_add_device
@@ -453,12 +452,12 @@ class Controller(Node):
                 self.poly.Notices['credentials'] = msg
                 LOGGER.error(msg)
             self.credential_error = True
-            self.credentials = Credentials('none','none')
+            self.credentials = kasa.Credentials('none','none')
         else:
             if self.credential_error:
                 self.poly.Notices.delete('credentials')
             self.credential_error = False
-            self.credentials = Credentials(self.Parameters['user'],self.Parameters['password'])
+            self.credentials = kasa.Credentials(self.Parameters['user'],self.Parameters['password'])
         #self.check_params()
         self.handler_params_st = True
 
