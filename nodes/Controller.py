@@ -1,7 +1,8 @@
 
 from udi_interface import Node,LOGGER,Custom,LOG_HANDLER
-import logging,re,json,sys,asyncio,time,os,markdown2
+import logging,re,json,asyncio,time,os,markdown2
 from threading import Thread,Event
+from concurrent.futures import TimeoutError as FutureTimeoutError
 from node_funcs import get_valid_node_name,get_valid_node_address
 import kasa
 from kasa.exceptions import *
@@ -37,6 +38,8 @@ class Controller(Node):
         self.handler_typedparams_st = None
         self.TypedData       = Custom(poly, 'customtypeddata')
         self.handler_typeddata_st = None
+        # Max seconds to wait on asyncio futures scheduled on mainloop (avoids indefinite blocking)
+        self.async_future_timeout = 180
         self.poly.subscribe(self.poly.START,                  self.handler_start, address) 
         self.poly.subscribe(self.poly.POLL,                   self.handler_poll)
         self.poly.subscribe(self.poly.LOGLEVEL,               self.handler_log_level)
@@ -80,12 +83,12 @@ class Controller(Node):
         # Discover
         try:
             self.discover()
-        except:
-            LOGGER.error(f'discover failed', exc_info=True)
+        except Exception:
+            LOGGER.error('discover failed', exc_info=True)
         try:
             self.add_manual_devices()
-        except:
-            LOGGER.error(f'add_manual_devices failed', exc_info=True)
+        except Exception:
+            LOGGER.error('add_manual_devices failed', exc_info=True)
         self.ready = True
         LOGGER.info(f'exit {self.name}')
 
@@ -111,13 +114,15 @@ class Controller(Node):
             LOGGER.info('Already running')
             return
         self.in_long_poll = True
-        # Heartbeat is not sent if stuck in discover or long_poll?
-        self.heartbeat()
-        if self.auto_discover:
-            self.discover_new()
-        else:
-            LOGGER.debug(f'auto_discover disabled {self.auto_discover}')
-        self.in_long_poll = False
+        try:
+            # Heartbeat is not sent if stuck in discover or long_poll?
+            self.heartbeat()
+            if self.auto_discover:
+                self.discover_new()
+            else:
+                LOGGER.debug(f'auto_discover disabled {self.auto_discover}')
+        finally:
+            self.in_long_poll = False
         LOGGER.debug('exit')
 
     def query(self):
@@ -139,7 +144,13 @@ class Controller(Node):
             LOGGER.info("No manual devices configured")
             return
         future = asyncio.run_coroutine_threadsafe(self._add_manual_devices(), self.mainloop)
-        res = future.result()
+        try:
+            res = future.result(timeout=self.async_future_timeout)
+        except FutureTimeoutError:
+            LOGGER.error(
+                '_add_manual_devices timed out after %ss', self.async_future_timeout, exc_info=True
+            )
+            res = None
         LOGGER.debug(f'result={res}')
         self.discover_done = True
         LOGGER.info("exit")
@@ -157,7 +168,13 @@ class Controller(Node):
         self.devm = {}
         LOGGER.info(f"enter: {self.poly.network_interface['broadcast']}")
         future = asyncio.run_coroutine_threadsafe(self._discover(target=self.poly.network_interface['broadcast']), self.mainloop)
-        res = future.result()
+        try:
+            res = future.result(timeout=self.async_future_timeout)
+        except FutureTimeoutError:
+            LOGGER.error(
+                '_discover timed out after %ss', self.async_future_timeout, exc_info=True
+            )
+            res = None
         LOGGER.debug(f'result={res}')
         if self.manual_networks is None or len(self.manual_networks) == 0:
             LOGGER.info("No manual networks configured")
@@ -165,7 +182,16 @@ class Controller(Node):
             for network in self.manual_networks:
                 LOGGER.info(f"calling: _discover(target={network['address']})")
                 future = asyncio.run_coroutine_threadsafe(self._discover(target=network['address']), self.mainloop)
-                res = future.result()
+                try:
+                    res = future.result(timeout=self.async_future_timeout)
+                except FutureTimeoutError:
+                    LOGGER.error(
+                        '_discover(%s) timed out after %ss',
+                        network['address'],
+                        self.async_future_timeout,
+                        exc_info=True,
+                    )
+                    res = None
                 LOGGER.debug(f'result={res}')
         self.discover_done = True
         LOGGER.info("exit")
@@ -271,7 +297,13 @@ class Controller(Node):
             LOGGER.error("Node is not yet ready")
             return False
         future = asyncio.run_coroutine_threadsafe(self._discover_new_a(), self.mainloop)
-        res = future.result()
+        try:
+            res = future.result(timeout=self.async_future_timeout)
+        except FutureTimeoutError:
+            LOGGER.error(
+                '_discover_new_a timed out after %ss', self.async_future_timeout, exc_info=True
+            )
+            res = None
         LOGGER.debug(f'result={res}')
         LOGGER.info("exit")
 
@@ -333,8 +365,8 @@ class Controller(Node):
             else:
                 LOGGER.error(f"Device type not yet supported: {cfg['type']}")
                 return False
-        except:
-                LOGGER.error(f'Failed adding dev={dev}', exc_info=True)
+        except Exception:
+            LOGGER.error(f'Failed adding dev={dev}', exc_info=True)
         node = self.poly.getNode(cfg['address'])
         if node is None:
             LOGGER.error(f"Unable to retrieve node address {cfg['address']} for {type} returned {node}")
@@ -363,8 +395,11 @@ class Controller(Node):
                         LOGGER.warning(f"Existing node name '{cname}' for {address} does not match requested name '{node.name}', changing to match")
                         try:
                             self.poly.renameNode(address,node.name)
-                        except:
-                            LOGGER.error(f'renameNode error, which is a known issue with PG3x Version <= 3.2.7', exc_info=True)
+                        except Exception:
+                            LOGGER.error(
+                                'renameNode error, which is a known issue with PG3x Version <= 3.2.7',
+                                exc_info=True,
+                            )
                     else:
                         LOGGER.warning(f"Existing node name '{cname}' for {address} does not match requested name '{node.name}', NOT changing to match, set change_node_names=true to enable")
                         # Change it to existing name to avoid addNode error
@@ -388,9 +423,8 @@ class Controller(Node):
     def cfg_to_dict(self,cfg):
         try:
             cfgd = json.loads(cfg)
-        except:
-            err = sys.exc_info()[0]
-            LOGGER.error(f'failed to parse cfg={cfg} Error: {err}')
+        except (json.JSONDecodeError, TypeError) as err:
+            LOGGER.error('failed to parse cfg=%r Error: %s', cfg, err)
             return None
         return cfgd
 
