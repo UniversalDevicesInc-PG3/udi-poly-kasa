@@ -76,3 +76,9 @@ target/
 polyinterface
 #Don't commit zip files
 *.zip
+
+# Local runtime/security artifacts
+*.cert
+*.key
+*.lock
+svc.pid
