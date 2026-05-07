@@ -82,3 +82,7 @@ polyinterface
 *.key
 *.lock
 svc.pid
+
+# Local working backups and one-off patches
+python-kasa-broken-backup/
+*.patch
