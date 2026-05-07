@@ -31,6 +31,10 @@ class SmartDeviceNode(Node):
         self.event  = None
         self.in_long_poll = False
         self.in_short_poll = False
+        self._short_poll_busy_logged = False
+        self._long_poll_busy_logged = False
+        self._poll_disabled_logged = False
+        self._ready_wait_logged = False
         self.error_connect = False
         self.connected = None # So start will force setting proper status
         LOGGER.debug(f'{self.pfx} controller={controller} address={address} name={name} host={self.host} id={self.id} dev={self.dev} cfg={self.cfg}')
@@ -55,14 +59,19 @@ class SmartDeviceNode(Node):
         LOGGER.debug(f'exit: {self.name} dev={self.dev}')
 
     def handler_poll(self, polltype):
-        LOGGER.debug(f'{self.pfx}')
         if self.get_mon == 0:
-            LOGGER.debug(f'{self.pfx} Node poll is turned off')
+            if not self._poll_disabled_logged:
+                LOGGER.info(f'{self.pfx} Node poll is turned off')
+                self._poll_disabled_logged = True
             return
+        self._poll_disabled_logged = False
         if not self.ready:
-            LOGGER.warning(f'{self.pfx} Node not ready to poll, must be disconnected or slow to respond?')
+            if not self._ready_wait_logged:
+                LOGGER.warning(f'{self.pfx} Node not ready to poll, waiting for initialization')
+                self._ready_wait_logged = True
             self.ready_warn = True
             return False
+        self._ready_wait_logged = False
         if self.ready_warn:
             if self.is_connected():
                 LOGGER.warning(f'{self.pfx} Node is now ready to poll')
@@ -100,10 +109,12 @@ class SmartDeviceNode(Node):
         self.reportDrivers()
 
     def shortPoll(self):
-        LOGGER.debug(f'{self.pfx} enter')
         if self.in_short_poll:
-            LOGGER.warning(f'{self.pfx} Already running')
+            if not self._short_poll_busy_logged:
+                LOGGER.warning(f'{self.pfx} shortPoll already running, skipping this cycle')
+                self._short_poll_busy_logged = True
             return
+        self._short_poll_busy_logged = False
         self.in_short_poll = True
         try:
             fut = asyncio.run_coroutine_threadsafe(self._shortPoll_a(), self.controller.mainloop)
@@ -119,7 +130,7 @@ class SmartDeviceNode(Node):
                 res = None
         finally:
             self.in_short_poll = False
-        LOGGER.debug(f'{self.pfx} res={res} exit')
+        LOGGER.debug(f'{self.pfx} shortPoll result={res}')
 
     async def _shortPoll_a(self):
         LOGGER.debug(f'{self.pfx} enter: {self.name}')
@@ -134,10 +145,12 @@ class SmartDeviceNode(Node):
         LOGGER.debug(f'{self.pfx} exit: {self.name}')
 
     def longPoll(self):
-        LOGGER.debug(f'{self.pfx} enter')
         if self.in_long_poll:
-            LOGGER.warning(f'{self.pfx} Already running')
+            if not self._long_poll_busy_logged:
+                LOGGER.warning(f'{self.pfx} longPoll already running, skipping this cycle')
+                self._long_poll_busy_logged = True
             return
+        self._long_poll_busy_logged = False
         self.in_long_poll = True
         try:
             fut = asyncio.run_coroutine_threadsafe(self._longPoll_a(), self.controller.mainloop)
@@ -153,7 +166,7 @@ class SmartDeviceNode(Node):
                 res = None
         finally:
             self.in_long_poll = False
-        LOGGER.debug(f'{self.pfx} res={res} exit')
+        LOGGER.debug(f'{self.pfx} longPoll result={res}')
 
     async def _longPoll_a(self):
         if not self.ready:
@@ -399,11 +412,22 @@ class SmartDeviceNode(Node):
     def set_connected(self,st,msg=None,exc_info=False):
         if self.error_connect and st:
             LOGGER.warning(f"{self.pfx} Device {self.host} responding again")
+            if self.dev is not None:
+                self.controller.clear_device_notice(self.dev)
             self.error_connect = False
         if not st:
             self.error_connect = True
             if msg is not None:
                 LOGGER.error(msg,exc_info=exc_info)
+                if self.dev is not None:
+                    # Lower priority than update_dev/auth so we don't replace
+                    # the more specific exception with a generic echo like
+                    # "failed updating, see log" or "res=False".
+                    self.controller.set_device_notice(
+                        self.dev,
+                        msg.replace(f"{self.pfx} ", "", 1),
+                        source='connect',
+                    )
         # Just return if setting to same status
         if st == self.connected:
             return

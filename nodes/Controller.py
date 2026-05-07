@@ -1,6 +1,7 @@
 
 from udi_interface import Node,LOGGER,Custom,LOG_HANDLER
 import logging,re,json,asyncio,time,os,markdown2
+from datetime import datetime
 from threading import Thread,Event
 from concurrent.futures import TimeoutError as FutureTimeoutError
 from node_funcs import get_valid_node_name,get_valid_node_address
@@ -40,6 +41,9 @@ class Controller(Node):
         self.handler_typeddata_st = None
         # Max seconds to wait on asyncio futures scheduled on mainloop (avoids indefinite blocking)
         self.async_future_timeout = 180
+        self._discover_wait_logged = False
+        self._long_poll_busy_logged = False
+        self._unsupported_device_types_logged = set()
         self.poly.subscribe(self.poly.START,                  self.handler_start, address) 
         self.poly.subscribe(self.poly.POLL,                   self.handler_poll)
         self.poly.subscribe(self.poly.LOGLEVEL,               self.handler_log_level)
@@ -106,13 +110,20 @@ class Controller(Node):
         LOGGER.debug('exit')
 
     def longPoll(self):
-        LOGGER.debug('enter')
         if not self.discover_done:
-            LOGGER.info('waiting for discover to complete')
+            # Avoid repeating this every long poll until discover finishes.
+            if not self._discover_wait_logged:
+                LOGGER.info('waiting for discover to complete')
+                self._discover_wait_logged = True
             return
+        self._discover_wait_logged = False
         if self.in_long_poll:
-            LOGGER.info('Already running')
+            # Re-entrancy can happen when device updates are slow; log once until recovered.
+            if not self._long_poll_busy_logged:
+                LOGGER.warning('longPoll already running, skipping this cycle')
+                self._long_poll_busy_logged = True
             return
+        self._long_poll_busy_logged = False
         self.in_long_poll = True
         try:
             # Heartbeat is not sent if stuck in discover or long_poll?
@@ -123,7 +134,6 @@ class Controller(Node):
                 LOGGER.debug(f'auto_discover disabled {self.auto_discover}')
         finally:
             self.in_long_poll = False
-        LOGGER.debug('exit')
 
     def query(self):
         self.setDriver('ST', 1)
@@ -200,21 +210,106 @@ class Controller(Node):
     # place and we need ability to update device before the node
     # is created.  The SmartDeviceNode calls this update.
     async def update_dev(self,dev):
-        LOGGER.debug(f"enter: {dev}")
         ret = False
         try:
             await dev.update()
             ret = True
         except AuthenticationError as msg:
+            self.set_device_notice(
+                dev,
+                f'Authentication failed: {msg}',
+                source='auth',
+            )
             LOGGER.error(f'Failed to authenticate {dev}: {msg}')
         except Exception as ex:
+            self.set_device_notice(
+                dev,
+                f'Update failed: {type(ex).__name__}: {ex}',
+                source='update',
+            )
             LOGGER.error(f"Failed to update {ex}: {dev}", exc_info=True)
-        LOGGER.debug(f'update_dev:exit:{ret} {dev}')
-        LOGGER.debug(f"exit:{ret} {dev}")
+        if ret:
+            self.clear_device_notice(dev)
         return ret
+
+    def _notice_key_for_device(self, dev):
+        host = getattr(dev, 'host', 'unknown')
+        return f"dev_{host}".replace('.', '_')
+
+    # Sources ranked by how specific/useful the message is. Higher wins.
+    _NOTICE_SOURCE_PRIORITY = {
+        'state': 1,
+        'connect': 2,
+        'update': 3,
+        'auth': 4,
+    }
+
+    def set_device_notice(self, dev, message, source='state'):
+        """Set a single, timestamped notice per device.
+
+        The timestamp reflects first-seen for the current failure body so the
+        UI shows when the problem started, not the latest poll. A more
+        specific source (update/auth) wins over a generic state echo so we
+        don't churn between two near-identical messages for the same failure.
+        """
+        key = self._notice_key_for_device(dev)
+        body = f"{getattr(dev, 'alias', 'Device')} ({getattr(dev, 'host', 'unknown')}): {message}"
+        new_priority = self._NOTICE_SOURCE_PRIORITY.get(source, 0)
+        try:
+            existing = self.poly.Notices[key]
+        except KeyError:
+            existing = None
+        if existing is not None:
+            # Same failure body already shown; preserve original timestamp.
+            if existing.endswith(body):
+                return
+            existing_priority = self._notice_priority_from_value(existing)
+            if existing_priority > new_priority:
+                # A more specific failure is already on the UI; don't downgrade it.
+                return
+        timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        # Embed source so future calls can compare priority without extra state.
+        self.poly.Notices[key] = f"[{timestamp}] [{source}] {body}"
+
+    def clear_device_notice(self, dev):
+        key = self._notice_key_for_device(dev)
+        try:
+            self.poly.Notices.delete(key)
+        except KeyError:
+            pass
+
+    def _notice_priority_from_value(self, value):
+        # Notice format is "[timestamp] [source] body". Be tolerant of legacy
+        # values written without a source tag.
+        try:
+            after_ts = value.split('] ', 1)[1]
+            tag = after_ts.split(']', 1)[0].lstrip('[')
+        except (IndexError, ValueError):
+            return 0
+        return self._NOTICE_SOURCE_PRIORITY.get(tag, 0)
+
+    def is_unsupported_discovered_type(self, dev):
+        """Skip device classes this plugin cannot yet represent as nodes."""
+        return str(dev.device_type) in ('DeviceType.Camera', 'DeviceType.Hub')
+
+    def log_unsupported_discovered_type(self, dev):
+        key = f"{dev.mac}:{dev.device_type}"
+        if key in self._unsupported_device_types_logged:
+            return
+        self._unsupported_device_types_logged.add(key)
+        LOGGER.warning(
+            "Ignoring unsupported discovered device type=%s mac=%s host=%s model=%s",
+            dev.device_type,
+            dev.mac,
+            dev.host,
+            getattr(dev, 'model', None),
+        )
 
     async def discover_add_device(self,dev):
         LOGGER.debug(f"enter: {dev}")
+        if self.is_unsupported_discovered_type(dev):
+            self.log_unsupported_discovered_type(dev)
+            return False
         LOGGER.info(f"Got Device\n\tAlias:{dev.alias}\n\tModel:{dev.model}\n\tMac:{dev.mac}\n\tHost:{dev.host}")
         if not await self.update_dev(dev):
             return False
@@ -258,6 +353,9 @@ class Controller(Node):
             LOGGER.debug(f'enter: host={dev.host}')
             smac = self.smac(dev.mac)
             LOGGER.debug(f'enter: mac={smac} dev={dev}')
+            if self.is_unsupported_discovered_type(dev) and smac not in self.nodes_by_mac:
+                self.log_unsupported_discovered_type(dev)
+                return False
             # Known Device?
             if not await self.update_dev(dev):
                 return False
