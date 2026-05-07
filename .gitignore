@@ -86,3 +86,8 @@ svc.pid
 # Local working backups and one-off patches
 python-kasa-broken-backup/
 *.patch
+
+# Local-only dev artifacts (vendored python-kasa clone + import shim symlink, ad-hoc notes)
+/python-kasa/
+/kasa
+ISSUES.txt
