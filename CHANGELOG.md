@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.3.3] - 2026-05-08
+
+### Fixed
+
+- **`discover_timeout` TypeError (issue [#21](https://github.com/UniversalDevicesInc-PG3/udi-poly-kasa/issues/21)):** PG3 Custom Parameters always come back as strings, but `kasa.Discover.discover` passes `timeout` straight to `asyncio.sleep()`, which raises `TypeError: '<=' not supported between instances of 'str' and 'int'` on newer python-kasa. `handler_params` now coerces `discover_timeout` to `int` and falls back to the default if the operator typed something non-numeric.
+
 ## [3.3.2] - 2026-05-08
 
 ### Fixed

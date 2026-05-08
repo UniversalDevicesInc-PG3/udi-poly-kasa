@@ -778,7 +778,20 @@ class Controller(Node):
 
         self.change_node_names = True if self.Parameters['change_node_names'] == 'true' else False
         self.auto_discover     = True if self.Parameters['auto_discover']     == 'true' else False
-        self.discover_timeout  = self.Parameters['discover_timeout']
+        # PG3 Custom Parameters always come back as strings, but kasa.Discover.discover
+        # passes timeout straight to asyncio.sleep(), which raises
+        # `TypeError: '<=' not supported between instances of 'str' and 'int'`
+        # on newer python-kasa (issue #21). Coerce to int and fall back to the
+        # default if the operator typed something non-numeric.
+        raw_timeout = self.Parameters['discover_timeout']
+        try:
+            self.discover_timeout = int(raw_timeout)
+        except (TypeError, ValueError):
+            LOGGER.warning(
+                "Invalid discover_timeout=%r in Custom Parameters; using default %d",
+                raw_timeout, defaults['discover_timeout'],
+            )
+            self.discover_timeout = defaults['discover_timeout']
         #
         # Build our credentials
         #
