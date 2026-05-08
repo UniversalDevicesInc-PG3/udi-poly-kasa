@@ -4,7 +4,7 @@
 # This code is used for bulbs
 #
 from udi_interface import Node,LOGGER
-import asyncio
+import asyncio,time
 from concurrent.futures import TimeoutError as FutureTimeoutError
 from kasa import SmartBulb,SmartDeviceException
 from nodes import SmartDeviceNode
@@ -59,16 +59,30 @@ class SmartBulbNode(SmartDeviceNode):
         super().__init__(controller, primary, address, name, dev, cfg)
 
     def _future_result(self, fut):
+        timeout = self.controller.async_future_timeout
+        threshold = getattr(self.controller, 'slow_future_warn_threshold', 5)
+        start = time.monotonic()
         try:
-            return fut.result(timeout=self.controller.async_future_timeout)
+            res = fut.result(timeout=timeout)
         except FutureTimeoutError:
+            elapsed = time.monotonic() - start
             LOGGER.error(
-                '%s async command timed out after %ss',
+                '%s async command timed out after %ss (waited %.1fs)',
                 self.pfx,
-                self.controller.async_future_timeout,
+                timeout,
+                elapsed,
                 exc_info=True,
             )
             return None
+        elapsed = time.monotonic() - start
+        if elapsed >= threshold:
+            LOGGER.warning(
+                '%s async command took %.1fs (>= %ss); mainloop is under pressure',
+                self.pfx,
+                elapsed,
+                threshold,
+            )
+        return res
 
     async def set_bri_a(self,val):
         self.setDriver('GV5',val)

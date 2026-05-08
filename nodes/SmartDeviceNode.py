@@ -3,7 +3,7 @@
 # All Devices are one of these to share the common methods
 #
 #
-import re,asyncio
+import re,asyncio,time
 from concurrent.futures import TimeoutError as FutureTimeoutError
 from udi_interface import Node,LOGGER
 from kasa import SmartDeviceException
@@ -86,20 +86,45 @@ class SmartDeviceNode(Node):
     def handler_delete(self):
         LOGGER.warning(f'{self.pfx} address={self.adress}')
 
-    def query(self):
-        LOGGER.info(f'{self.pfx} enter')
-        fut = asyncio.run_coroutine_threadsafe(self.set_state_a(), self.controller.mainloop)
-        LOGGER.info(f'{self.pfx} waiting for set_state_a results...')
+    def _run_coro(self, coro, label, timeout=None, default=None):
+        """Run an asyncio coroutine on the controller mainloop, time it, and
+        bound it. Logs a warning when the call takes longer than the
+        controller's slow-future threshold so we can spot mainloop pressure
+        before it escalates to a watchdog kill.
+        """
+        if timeout is None:
+            timeout = self.controller.async_future_timeout
+        threshold = getattr(self.controller, 'slow_future_warn_threshold', 5)
+        fut = asyncio.run_coroutine_threadsafe(coro, self.controller.mainloop)
+        start = time.monotonic()
         try:
-            res = fut.result(timeout=self.controller.async_future_timeout)
+            res = fut.result(timeout=timeout)
         except FutureTimeoutError:
+            elapsed = time.monotonic() - start
             LOGGER.error(
-                '%s query/set_state_a timed out after %ss',
+                '%s %s timed out after %ss (waited %.1fs)',
                 self.pfx,
-                self.controller.async_future_timeout,
+                label,
+                timeout,
+                elapsed,
                 exc_info=True,
             )
-            res = None
+            return default
+        elapsed = time.monotonic() - start
+        if elapsed >= threshold:
+            LOGGER.warning(
+                '%s %s took %.1fs (>= %ss); mainloop is under pressure',
+                self.pfx,
+                label,
+                elapsed,
+                threshold,
+            )
+        return res
+
+    def query(self):
+        LOGGER.info(f'{self.pfx} enter')
+        LOGGER.info(f'{self.pfx} waiting for set_state_a results...')
+        res = self._run_coro(self.set_state_a(), 'query/set_state_a')
         LOGGER.info(f'{self.pfx} res={res}')
         self.reportDrivers()
         LOGGER.info(f'{self.pfx} exit')
@@ -117,17 +142,7 @@ class SmartDeviceNode(Node):
         self._short_poll_busy_logged = False
         self.in_short_poll = True
         try:
-            fut = asyncio.run_coroutine_threadsafe(self._shortPoll_a(), self.controller.mainloop)
-            try:
-                res = fut.result(timeout=self.controller.async_future_timeout)
-            except FutureTimeoutError:
-                LOGGER.error(
-                    '%s _shortPoll_a timed out after %ss',
-                    self.pfx,
-                    self.controller.async_future_timeout,
-                    exc_info=True,
-                )
-                res = None
+            res = self._run_coro(self._shortPoll_a(), '_shortPoll_a')
         finally:
             self.in_short_poll = False
         LOGGER.debug(f'{self.pfx} shortPoll result={res}')
@@ -153,17 +168,7 @@ class SmartDeviceNode(Node):
         self._long_poll_busy_logged = False
         self.in_long_poll = True
         try:
-            fut = asyncio.run_coroutine_threadsafe(self._longPoll_a(), self.controller.mainloop)
-            try:
-                res = fut.result(timeout=self.controller.async_future_timeout)
-            except FutureTimeoutError:
-                LOGGER.error(
-                    '%s _longPoll_a timed out after %ss',
-                    self.pfx,
-                    self.controller.async_future_timeout,
-                    exc_info=True,
-                )
-                res = None
+            res = self._run_coro(self._longPoll_a(), '_longPoll_a')
         finally:
             self.in_long_poll = False
         LOGGER.debug(f'{self.pfx} longPoll result={res}')
@@ -181,22 +186,19 @@ class SmartDeviceNode(Node):
     def connect(self):
         if self.is_connected():
             return True
-        fut = asyncio.run_coroutine_threadsafe(self.connect_a(), self.controller.mainloop)
-        try:
-            return fut.result(timeout=self.controller.async_future_timeout)
-        except FutureTimeoutError:
-            LOGGER.error(
-                '%s connect_a timed out after %ss',
-                self.pfx,
-                self.controller.async_future_timeout,
-                exc_info=True,
-            )
-            return False
+        return bool(self._run_coro(self.connect_a(), 'connect_a', default=False))
 
     async def connect_a(self):
         LOGGER.debug(f'{self.pfx} enter: {self.name} dev={self.dev}')
         if not self.is_connected():
             LOGGER.debug(f'{self.pfx} connected={self.is_connected()}')
+            # When the controller's circuit breaker has marked this host as
+            # repeatedly unreachable, don't pay the discovery/update timeout
+            # cost again until next_try elapses or the longPoll re-test wins.
+            if self.dev is None and self.controller.host_should_skip(self.host):
+                LOGGER.debug(f'{self.pfx} skipping connect; host circuit-broken')
+                self.set_connected(False)
+                return False
             try:
                 # Try to discover if we don't have it
                 if self.dev is None:
@@ -217,11 +219,13 @@ class SmartDeviceNode(Node):
                             f"{self.pfx} Unable to update device {self.host} will try again later: res={res}"
                         )
             except SmartDeviceException as ex:
+                self.controller.host_record_failure(self.host)
                 self.set_connected(
                     False,
                     f"{self.pfx} Unable to connect to device {self.host} will try again later: {ex}"
                 )
             except Exception as ex:
+                self.controller.host_record_failure(self.host)
                 self.set_connected(
                     False,
                     f"{self.pfx} Unknown exception {ex} connecting to device {self.host} will try again later",
@@ -232,18 +236,7 @@ class SmartDeviceNode(Node):
 
     def update(self):
         LOGGER.debug(f'enter: {self.name} dev={self.dev}')
-        #self.controller.mainloop.run_until_complete(self.update_a())
-        fut = asyncio.run_coroutine_threadsafe(self.update_a(), self.controller.mainloop)
-        try:
-            res = fut.result(timeout=self.controller.async_future_timeout)
-        except FutureTimeoutError:
-            LOGGER.error(
-                '%s update_a timed out after %ss',
-                self.pfx,
-                self.controller.async_future_timeout,
-                exc_info=True,
-            )
-            res = False
+        res = self._run_coro(self.update_a(), 'update_a', default=False)
         LOGGER.debug(f'exit:{res} {self.name} dev={self.dev}')
         return res
 
@@ -264,17 +257,7 @@ class SmartDeviceNode(Node):
 
     def set_on(self):
         LOGGER.debug(f'{self.pfx} enter')
-        fut = asyncio.run_coroutine_threadsafe(self.set_on_a(), self.controller.mainloop)
-        try:
-            res = fut.result(timeout=self.controller.async_future_timeout)
-        except FutureTimeoutError:
-            LOGGER.error(
-                '%s set_on_a timed out after %ss',
-                self.pfx,
-                self.controller.async_future_timeout,
-                exc_info=True,
-            )
-            res = None
+        res = self._run_coro(self.set_on_a(), 'set_on_a')
         LOGGER.debug(f'{self.pfx} exit result={res}')
 
     async def set_on_a(self):
@@ -287,17 +270,7 @@ class SmartDeviceNode(Node):
 
     def set_off(self):
         LOGGER.debug(f'{self.pfx} enter')
-        fut = asyncio.run_coroutine_threadsafe(self.set_off_a(), self.controller.mainloop)
-        try:
-            res = fut.result(timeout=self.controller.async_future_timeout)
-        except FutureTimeoutError:
-            LOGGER.error(
-                '%s set_off_a timed out after %ss',
-                self.pfx,
-                self.controller.async_future_timeout,
-                exc_info=True,
-            )
-            res = None
+        res = self._run_coro(self.set_off_a(), 'set_off_a')
         LOGGER.debug(f'result={res}')
         LOGGER.debug(f'{self.pfx} exit')
 
@@ -365,17 +338,7 @@ class SmartDeviceNode(Node):
         pass
 
     def set_energy(self):
-        fut = asyncio.run_coroutine_threadsafe(self._set_energy_au(), self.controller.mainloop)
-        try:
-            res = fut.result(timeout=self.controller.async_future_timeout)
-        except FutureTimeoutError:
-            LOGGER.error(
-                '%s _set_energy_au timed out after %ss',
-                self.pfx,
-                self.controller.async_future_timeout,
-                exc_info=True,
-            )
-            res = None
+        res = self._run_coro(self._set_energy_au(), '_set_energy_au')
         LOGGER.debug(f'result={res}')
 
     async def _set_energy_au(self):

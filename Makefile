@@ -1,4 +1,19 @@
+# udi-poly-kasa — lint, PG3 release artifacts (tag + per-track zips).
+#
+# PG3 release flow (clean tree; not detached HEAD):
+#   1. Bump nodes/__init__.py VERSION; commit (and update CHANGELOG.md).
+#   2. `make release`     — tag v<VERSION> and push current branch + tag.
+#                           Then in PG3 UI, edit the plugin and set Version to that exact VERSION.
+#   3. `make beta`        — push HEAD to the `beta` branch (reference) and build $(NAME)-beta-<VERSION>.zip.
+#                           Then in PG3 UI, edit the plugin and set Version to that exact VERSION.
+#   4. `make production`  — push HEAD to the `production` branch (reference) and build $(NAME)-production-<VERSION>.zip.
+# The track-specific zip files are the actual deliverables uploaded to PG3.
+#
+# Note: targets that use multi-line shell recipes require GNU Make. On FreeBSD,
+# install gmake (`pkg install gmake`) and run `gmake release` / `gmake beta` /
+# `gmake production` instead of the system `make`.
 
+PYTHON ?= python3
 NAME = Kasa
 GIT_REMOTE ?= origin
 # Reference branches pushed alongside each per-track zip build.
@@ -6,7 +21,7 @@ BRANCH_BETA ?= beta
 BRANCH_PRODUCTION ?= production
 XML_FILES = profile/*/*.xml
 
-# sudo apt-get install libxml2-utils libxml2-dev
+# apt: sudo apt-get install libxml2-utils libxml2-dev
 check: xml-check
 
 xml-check:
@@ -23,9 +38,10 @@ help:
 	@echo "                           After make release / make beta, edit plugin in PG3 UI and set Version to \$$VERSION"
 	@echo "  make zip                 Ad-hoc local $(NAME).zip (no version suffix)"
 	@echo ""
-	@echo "Variables: GIT_REMOTE BRANCH_BETA BRANCH_PRODUCTION"
+	@echo "Variables: PYTHON GIT_REMOTE BRANCH_BETA BRANCH_PRODUCTION"
 
 clean:
+	$(PYTHON) -c "import pathlib, shutil; r = pathlib.Path('.'); [shutil.rmtree(p, ignore_errors=True) for p in r.rglob('__pycache__') if p.is_dir()]; shutil.rmtree('.pytest_cache', ignore_errors=True); shutil.rmtree('.ruff_cache', ignore_errors=True)"
 	rm -f $(NAME)*.zip
 
 # Ad-hoc local archive (no version suffix). For PG3 uploads, prefer `make beta` / `make production`.
@@ -90,6 +106,7 @@ production:
 
 # Tag the current HEAD as v<VERSION> and push the current branch + tag to $(GIT_REMOTE).
 # Version = nodes/__init__.py VERSION (canonical). Track-specific zips are built by `make beta` / `make production`.
+# Run from this directory, or: make -C /path/to/udi-poly-kasa release
 # Requires clean git working tree and a checked-out branch (not detached HEAD).
 release:
 	@set -e; \
@@ -103,7 +120,7 @@ release:
 	}; \
 	BRANCH=$$(git -C "$$ROOT" rev-parse --abbrev-ref HEAD); \
 	if [ "$$BRANCH" = "HEAD" ]; then \
-		echo "ERROR: detached HEAD. Checkout your release branch (e.g. main), then run make release."; \
+		echo "ERROR: detached HEAD. Checkout your release branch (e.g. master), then run make release."; \
 		exit 1; \
 	fi; \
 	if git -C "$$ROOT" rev-parse -q --verify "refs/tags/v$$VERSION" >/dev/null 2>&1; then \

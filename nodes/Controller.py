@@ -1,6 +1,6 @@
 
 from udi_interface import Node,LOGGER,Custom,LOG_HANDLER
-import logging,re,json,asyncio,time,os,markdown2
+import logging,re,json,asyncio,signal,time,os,markdown2
 from datetime import datetime
 from threading import Thread,Event
 from concurrent.futures import TimeoutError as FutureTimeoutError
@@ -39,11 +39,34 @@ class Controller(Node):
         self.handler_typedparams_st = None
         self.TypedData       = Custom(poly, 'customtypeddata')
         self.handler_typeddata_st = None
-        # Max seconds to wait on asyncio futures scheduled on mainloop (avoids indefinite blocking)
-        self.async_future_timeout = 180
+        # Max seconds to wait on asyncio futures scheduled on mainloop.
+        # Short ops (per-device update/query/poll) get a tight bound so a
+        # single hung host can't hold a worker thread for minutes.
+        # Network-broadcast discovery keeps a longer bound.
+        self.async_future_timeout = 30
+        self.discover_future_timeout = 180
+        # Warn when any single sync->async hop exceeds this; helps localize
+        # mainloop pressure before it becomes a watchdog kill.
+        self.slow_future_warn_threshold = 5
         self._discover_wait_logged = False
         self._long_poll_busy_logged = False
         self._unsupported_device_types_logged = set()
+        self._heartbeat_thread = None
+        self._heartbeat_stop = Event()
+        self._start_monotonic = time.monotonic()
+        # (notice_key, source) -> monotonic timestamp of last write.
+        self._notice_last_write = {}
+        # Per-host circuit breaker. Hosts that have failed N times in a row
+        # stop being probed by per-node connect_a/discover_single calls until
+        # their next_try monotonic time. The longPoll discover sweep still
+        # re-tests them at its 4-minute cadence.
+        self._host_state = {}  # host -> {"fail": int, "next_try": float}
+        self._host_breaker_threshold = 3
+        # Per-host discover_single bound; one slow host shouldn't dominate a
+        # poll cycle. python-kasa's default is 5s; we bound a bit tighter so
+        # multiple unreachable hosts add up to less mainloop blocking before
+        # the breaker trips.
+        self.discover_single_timeout = 3
         self.poly.subscribe(self.poly.START,                  self.handler_start, address) 
         self.poly.subscribe(self.poly.POLL,                   self.handler_poll)
         self.poly.subscribe(self.poly.LOGLEVEL,               self.handler_log_level)
@@ -59,6 +82,8 @@ class Controller(Node):
     def handler_start(self):
         LOGGER.info(f"Started Kasa PG3 NodeServer {self.poly.serverdata['version']}")
         LOGGER.info(f"Kasa Library Version {kasa.__version__}")
+        self._install_signal_handlers()
+        self._start_heartbeat_log()
         self.update_profile()
         self.Notices.clear()
         self.mainloop = mainloop
@@ -101,6 +126,69 @@ class Controller(Node):
         LOGGER.debug(f'enter')
         self.poly.addLogLevel('DEBUG_MODULES',9,'Debug + Modules')
         LOGGER.debug(f'exit')
+
+    def _install_signal_handlers(self):
+        # Without these a SIGTERM from the watchdog leaves no log evidence,
+        # which is exactly the failure mode we hit on 2026-05-07.
+        for sig in (signal.SIGTERM, signal.SIGINT, signal.SIGHUP):
+            try:
+                signal.signal(sig, self._handle_signal)
+            except (ValueError, OSError) as ex:
+                # Non-main thread or unsupported platform; not fatal.
+                LOGGER.debug(f'unable to install handler for {sig!r}: {ex}')
+
+    def _handle_signal(self, signum, frame):
+        try:
+            name = signal.Signals(signum).name
+        except (ValueError, AttributeError):
+            name = str(signum)
+        LOGGER.warning(f'received signal {name}; shutting down')
+        self._heartbeat_stop.set()
+        try:
+            self.poly.stop()
+        except Exception as ex:
+            LOGGER.error(f'poly.stop() raised during signal handling: {ex}', exc_info=True)
+
+    def _start_heartbeat_log(self):
+        if self._heartbeat_thread is not None and self._heartbeat_thread.is_alive():
+            return
+        self._heartbeat_thread = Thread(
+            target=self._heartbeat_log_loop,
+            name='kasa-heartbeat-log',
+            daemon=True,
+        )
+        self._heartbeat_thread.start()
+
+    def _heartbeat_log_loop(self):
+        # One info line per minute. Gaps in this stream make it trivial to
+        # spot mainloop freezes and watchdog kills in the log.
+        while not self._heartbeat_stop.is_set():
+            try:
+                uptime = int(time.monotonic() - self._start_monotonic)
+                short, long_ = self._poll_inflight_counts()
+                LOGGER.info(
+                    f'alive uptime={uptime}s discover_done={self.discover_done} '
+                    f'inflight short={short} long={long_}'
+                )
+            except Exception as ex:
+                LOGGER.debug(f'heartbeat log error: {ex}')
+            self._heartbeat_stop.wait(60)
+
+    def _poll_inflight_counts(self):
+        short = 0
+        long_ = 0
+        try:
+            for node_address in list(self.poly.getNodes()):
+                node = self.poly.getNode(node_address)
+                if node is None:
+                    continue
+                if getattr(node, 'in_short_poll', False):
+                    short += 1
+                if getattr(node, 'in_long_poll', False):
+                    long_ += 1
+        except Exception:
+            pass
+        return short, long_
 
     # Controller only needs longPoll
     def handler_poll(self, polltype):
@@ -155,10 +243,10 @@ class Controller(Node):
             return
         future = asyncio.run_coroutine_threadsafe(self._add_manual_devices(), self.mainloop)
         try:
-            res = future.result(timeout=self.async_future_timeout)
+            res = future.result(timeout=self.discover_future_timeout)
         except FutureTimeoutError:
             LOGGER.error(
-                '_add_manual_devices timed out after %ss', self.async_future_timeout, exc_info=True
+                '_add_manual_devices timed out after %ss', self.discover_future_timeout, exc_info=True
             )
             res = None
         LOGGER.debug(f'result={res}')
@@ -179,10 +267,10 @@ class Controller(Node):
         LOGGER.info(f"enter: {self.poly.network_interface['broadcast']}")
         future = asyncio.run_coroutine_threadsafe(self._discover(target=self.poly.network_interface['broadcast']), self.mainloop)
         try:
-            res = future.result(timeout=self.async_future_timeout)
+            res = future.result(timeout=self.discover_future_timeout)
         except FutureTimeoutError:
             LOGGER.error(
-                '_discover timed out after %ss', self.async_future_timeout, exc_info=True
+                '_discover timed out after %ss', self.discover_future_timeout, exc_info=True
             )
             res = None
         LOGGER.debug(f'result={res}')
@@ -193,12 +281,12 @@ class Controller(Node):
                 LOGGER.info(f"calling: _discover(target={network['address']})")
                 future = asyncio.run_coroutine_threadsafe(self._discover(target=network['address']), self.mainloop)
                 try:
-                    res = future.result(timeout=self.async_future_timeout)
+                    res = future.result(timeout=self.discover_future_timeout)
                 except FutureTimeoutError:
                     LOGGER.error(
                         '_discover(%s) timed out after %ss',
                         network['address'],
-                        self.async_future_timeout,
+                        self.discover_future_timeout,
                         exc_info=True,
                     )
                     res = None
@@ -211,6 +299,7 @@ class Controller(Node):
     # is created.  The SmartDeviceNode calls this update.
     async def update_dev(self,dev):
         ret = False
+        host = getattr(dev, 'host', None)
         try:
             await dev.update()
             ret = True
@@ -221,7 +310,19 @@ class Controller(Node):
                 source='auth',
             )
             LOGGER.error(f'Failed to authenticate {dev}: {msg}')
+        except KasaException as ex:
+            # KasaException already encodes the actionable bit (e.g. "Host
+            # is down", "Timed out") in its message. The traceback is the
+            # same vendor stack every time and just bloats the log.
+            self.host_record_failure(host)
+            self.set_device_notice(
+                dev,
+                f'Update failed: {type(ex).__name__}: {ex}',
+                source='update',
+            )
+            LOGGER.error(f"Failed to update {ex}: {dev}")
         except Exception as ex:
+            self.host_record_failure(host)
             self.set_device_notice(
                 dev,
                 f'Update failed: {type(ex).__name__}: {ex}',
@@ -229,6 +330,7 @@ class Controller(Node):
             )
             LOGGER.error(f"Failed to update {ex}: {dev}", exc_info=True)
         if ret:
+            self.host_record_success(host)
             self.clear_device_notice(dev)
         return ret
 
@@ -244,6 +346,12 @@ class Controller(Node):
         'auth': 4,
     }
 
+    # Minimum seconds between Notices writes for the same (host, source).
+    # Without this, slightly-varying exception strings (e.g. different
+    # transient socket errors) round-trip through the udi_interface MQTT
+    # Notices channel each poll, generating tens of DEBUG lines per write.
+    _NOTICE_WRITE_COOLDOWN_SECS = 60
+
     def set_device_notice(self, dev, message, source='state'):
         """Set a single, timestamped notice per device.
 
@@ -251,6 +359,9 @@ class Controller(Node):
         UI shows when the problem started, not the latest poll. A more
         specific source (update/auth) wins over a generic state echo so we
         don't churn between two near-identical messages for the same failure.
+        Repeated writes for the same (host, source) inside the cooldown
+        window are coalesced even if the body wobbles, so transient error
+        text differences don't cause MQTT/log churn.
         """
         key = self._notice_key_for_device(dev)
         body = f"{getattr(dev, 'alias', 'Device')} ({getattr(dev, 'host', 'unknown')}): {message}"
@@ -267,9 +378,16 @@ class Controller(Node):
             if existing_priority > new_priority:
                 # A more specific failure is already on the UI; don't downgrade it.
                 return
+        # Cooldown: same (host, source) recently written -> skip.
+        cooldown_key = (key, source)
+        last = self._notice_last_write.get(cooldown_key, 0.0)
+        now = time.monotonic()
+        if existing is not None and now - last < self._NOTICE_WRITE_COOLDOWN_SECS:
+            return
         timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         # Embed source so future calls can compare priority without extra state.
         self.poly.Notices[key] = f"[{timestamp}] [{source}] {body}"
+        self._notice_last_write[cooldown_key] = now
 
     def clear_device_notice(self, dev):
         key = self._notice_key_for_device(dev)
@@ -277,6 +395,9 @@ class Controller(Node):
             self.poly.Notices.delete(key)
         except KeyError:
             pass
+        # Drop any cooldown entries so the next failure isn't suppressed.
+        for ck in [k for k in self._notice_last_write if k[0] == key]:
+            self._notice_last_write.pop(ck, None)
 
     def _notice_priority_from_value(self, value):
         # Notice format is "[timestamp] [source] body". Be tolerant of legacy
@@ -287,6 +408,46 @@ class Controller(Node):
         except (IndexError, ValueError):
             return 0
         return self._NOTICE_SOURCE_PRIORITY.get(tag, 0)
+
+    def host_should_skip(self, host):
+        """True when a host has failed too recently to be worth probing again.
+
+        Used by per-node connect paths so a wall of unreachable hosts can't
+        keep the asyncio mainloop blocked on serial 5 s discovery timeouts.
+        """
+        if host is None:
+            return False
+        s = self._host_state.get(host)
+        if s is None:
+            return False
+        if s.get('fail', 0) < self._host_breaker_threshold:
+            return False
+        return time.monotonic() < s.get('next_try', 0.0)
+
+    def host_record_failure(self, host):
+        if host is None:
+            return
+        s = self._host_state.setdefault(host, {'fail': 0, 'next_try': 0.0})
+        s['fail'] += 1
+        # 60s, 120s, 240s, 480s, 960s, capped at 15 minutes.
+        backoff = min(15 * 60, 30 * (2 ** min(s['fail'], 5)))
+        s['next_try'] = time.monotonic() + backoff
+        if s['fail'] == self._host_breaker_threshold:
+            LOGGER.warning(
+                'host %s circuit-broken after %s failures; will skip per-node '
+                'probes for %ss',
+                host,
+                s['fail'],
+                int(backoff),
+            )
+
+    def host_record_success(self, host):
+        if host is None:
+            return
+        prev = self._host_state.get(host)
+        self._host_state[host] = {'fail': 0, 'next_try': 0.0}
+        if prev is not None and prev.get('fail', 0) >= self._host_breaker_threshold:
+            LOGGER.info('host %s circuit reset after success', host)
 
     def is_unsupported_discovered_type(self, dev):
         """Skip device classes this plugin cannot yet represent as nodes."""
@@ -381,10 +542,27 @@ class Controller(Node):
             
     async def discover_single(self, host=None):
         LOGGER.debug(f'enter: host={host}')
-        dev = await kasa.Discover.discover_single(
-            host,
-            credentials=self.credentials,
+        if self.host_should_skip(host):
+            s = self._host_state.get(host, {})
+            remaining = max(0, int(s.get('next_try', 0.0) - time.monotonic()))
+            LOGGER.debug(
+                f'host {host} circuit-broken ({s.get("fail", 0)} failures); '
+                f'skipping discover_single, retry in {remaining}s'
             )
+            return None
+        try:
+            dev = await kasa.Discover.discover_single(
+                host,
+                credentials=self.credentials,
+                discovery_timeout=self.discover_single_timeout,
+            )
+        except Exception:
+            self.host_record_failure(host)
+            raise
+        if dev is None:
+            self.host_record_failure(host)
+        else:
+            self.host_record_success(host)
         LOGGER.debug(f'exit: dev={dev}')
         return dev
 
@@ -396,10 +574,10 @@ class Controller(Node):
             return False
         future = asyncio.run_coroutine_threadsafe(self._discover_new_a(), self.mainloop)
         try:
-            res = future.result(timeout=self.async_future_timeout)
+            res = future.result(timeout=self.discover_future_timeout)
         except FutureTimeoutError:
             LOGGER.error(
-                '_discover_new_a timed out after %ss', self.async_future_timeout, exc_info=True
+                '_discover_new_a timed out after %ss', self.discover_future_timeout, exc_info=True
             )
             res = None
         LOGGER.debug(f'result={res}')

@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.3.1] - 2026-05-08
+
+### Fixed
+
+- **Silent crash hardening:** the plugin could be SIGKILL'd by the PG3 watchdog with no traceback when several Kasa hosts went offline at once. Multiple unreachable hosts each cost ~5s on the single asyncio mainloop per poll, eventually starving paho-mqtt's keepalive.
+
+### Added
+
+- **Observability:**
+  - SIGTERM/SIGINT/SIGHUP handlers now log `received signal ...; shutting down` so external kills are visible.
+  - A daemon heartbeat thread emits a single `alive uptime=...` line every 60s; gaps in this stream pinpoint mainloop freezes.
+  - Per-cycle `query/shortPoll/longPoll/connect/update/set_*` calls now warn when they take >= 5s ("mainloop is under pressure"), well before the full timeout.
+- **Per-host circuit breaker:** after 3 consecutive failures, a host is skipped on per-node `connect_a`/`discover_single` paths with exponential backoff (60s → 15min cap). The longPoll-driven discovery sweep still re-tests at its 4-minute cadence, so recovery is automatic.
+
+### Changed
+
+- **Bounded blocking time on offline hosts:** `kasa.Discover.discover_single` is now called with an explicit `discovery_timeout=3` (was the kasa default of 5).
+- **Split future timeouts:** `async_future_timeout` (per-device ops) is now 30s; `discover_future_timeout` (network broadcast) keeps the previous 180s. A single hung host can no longer hold a worker thread for 3 minutes.
+- **Notice churn reduced:** writes for the same `(host, source)` are coalesced inside a 60s window, so transient exception-text wobble doesn't bounce through the udi_interface MQTT Notices channel every poll.
+- **Quieter `kasa.discover` logger:** demoted to WARNING; per-packet "Got error: [Errno 64] Host is down" no longer floods the log on networks with offline devices.
+- **`update_dev` exceptions:** drop the redundant traceback on `KasaException` (the message already carries the actionable bit); generic `Exception` paths still keep `exc_info=True`.
+
 ## [3.3.0] - 2026-05-07
 
 ### Changed
