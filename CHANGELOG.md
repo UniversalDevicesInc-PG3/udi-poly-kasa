@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.3.2] - 2026-05-08
+
+### Fixed
+
+- **Manual device discovery (issue [#24](https://github.com/UniversalDevicesInc-PG3/udi-poly-kasa/issues/24)):** `_add_manual_devices` was calling `self.discover_single(address=...)`, but the method signature is `discover_single(host=None)`. The unsupported keyword raised `TypeError: discover_single() got an unexpected keyword argument 'address'` and prevented every manual host from being added. Fixed by passing `host=...`. Especially impactful when broadcast discovery is unreliable (e.g. eisy on a different VLAN/subnet from the Kasa devices).
+- **Manual device re-add loop (issue [#25](https://github.com/UniversalDevicesInc-PG3/udi-poly-kasa/issues/25)):** every successful `addNode` triggered PG3 to save `customdata`, which re-fired `handler_typed_data`, which called `add_manual_devices` again, which re-added the same node. The cycle filled `debug.log` with megabytes of `Adding manual device / Got a DeviceType.Plug / interface:addNode / custom:_save` per minute and made IoX unresponsive. Added an idempotency guard at the top of `add_device_node` that returns the existing node when looked up by mac (canonical) or address.
+- **`discover_single` returning `None`:** `_add_manual_devices` now skips with a warning when `discover_single` short-circuits (e.g. circuit-broken host from 3.3.1) instead of blindly calling `add_device_node(dev=None)` and emitting an "INTERNAL ERROR" line.
+
 ## [3.3.1] - 2026-05-08
 
 ### Fixed

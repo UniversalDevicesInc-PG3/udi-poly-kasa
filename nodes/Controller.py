@@ -257,10 +257,16 @@ class Controller(Node):
         for mdev in self.manual_devices:
             LOGGER.info(f"Adding manual device {mdev['address']}")
             try:
-                dev = await self.discover_single(address=mdev['address'])
+                dev = await self.discover_single(host=mdev['address'])
+                if dev is None:
+                    LOGGER.warning(
+                        f"discover_single returned no device for {mdev['address']}; "
+                        f"skipping (host likely unreachable or circuit-broken)"
+                    )
+                    continue
                 self.add_device_node(dev=dev)
             except Exception as ex:
-                LOGGER.error(f"{ex} trying to connect to {mdev['address']}",exc_info=False) 
+                LOGGER.error(f"{ex} trying to connect to {mdev['address']}",exc_info=False)
         
     def discover(self):
         self.devm = {}
@@ -617,6 +623,26 @@ class Controller(Node):
         else:
             LOGGER.error(f"INTERNAL ERROR: dev={dev} and cfg={cfg}")
             return False
+        # Idempotency guard (issue #25). handler_typed_data() re-fires every
+        # time PG3 saves customdata, so each addNode triggers another
+        # add_manual_devices() pass on the same hosts. Without this guard,
+        # add_device_node would re-add the same node on every cycle, flooding
+        # the log and causing the IoX UI to lock up. Look up by mac first
+        # (canonical identity) and fall back to address (in case the node was
+        # added before nodes_by_mac was populated, e.g. from getNodesFromDb on
+        # restart).
+        mac_key = self.smac(cfg['mac']) if cfg.get('mac') else None
+        existing = self.nodes_by_mac.get(mac_key) if mac_key else None
+        if existing is None:
+            existing = self.poly.getNode(cfg['address'])
+        if existing is not None:
+            if mac_key is not None:
+                self.nodes_by_mac[mac_key] = existing
+            LOGGER.debug(
+                f"Device already added type={cfg['type']} "
+                f"address={cfg['address']} name='{cfg['name']}'"
+            )
+            return existing
         LOGGER.info(f"adding type={cfg['type']} address={cfg['address']} name='{cfg['name']}' ")
         #
         # Add Based on device type.  SmartStrip is a unique type, all others
