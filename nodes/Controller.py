@@ -1,6 +1,6 @@
 
 from udi_interface import Node,LOGGER,Custom,LOG_HANDLER
-import logging,re,json,asyncio,signal,time,os,markdown2
+import logging,re,json,asyncio,signal,sys,threading,time,os,markdown2
 from datetime import datetime
 from threading import Thread,Event
 from concurrent.futures import TimeoutError as FutureTimeoutError
@@ -83,11 +83,20 @@ class Controller(Node):
         LOGGER.info(f"Started Kasa PG3 NodeServer {self.poly.serverdata['version']}")
         LOGGER.info(f"Kasa Library Version {kasa.__version__}")
         self._install_signal_handlers()
+        self._install_exception_hooks()
         self._start_heartbeat_log()
         self.update_profile()
         self.Notices.clear()
         self.mainloop = mainloop
         asyncio.set_event_loop(mainloop)
+        # Route asyncio task/callback exceptions through LOGGER so they
+        # don't fall back to Python's default handler, which writes
+        # multi-line annotated tracebacks to stderr that udi_interface
+        # captures one character at a time.
+        try:
+            mainloop.set_exception_handler(self._asyncio_exception_handler)
+        except Exception as ex:  # noqa: BLE001
+            LOGGER.debug(f'unable to install asyncio exception handler: {ex}')
         self.connect_thread = Thread(target=mainloop.run_forever)
         self.connect_thread.start()
         self.setDriver('ST', 1)
@@ -148,6 +157,72 @@ class Controller(Node):
             self.poly.stop()
         except Exception as ex:
             LOGGER.error(f'poly.stop() raised during signal handling: {ex}', exc_info=True)
+
+    def _install_exception_hooks(self):
+        """Route any otherwise-uncaught exception through LOGGER as a
+        single record. Without this, Python's default thread/asyncio
+        handlers dump multi-line annotated tracebacks to stderr; the
+        udi_interface stderr capture writes one ERROR line per
+        character (each '^' caret of a Python 3.11 annotated traceback
+        arrives as its own write), which has produced ~27k log lines
+        from a single uncaught exception in the field.
+        """
+        def _log_exc(prefix, exc_type, exc_value, exc_traceback):
+            try:
+                LOGGER.error(
+                    '%s: %s: %s',
+                    prefix,
+                    getattr(exc_type, '__name__', exc_type),
+                    exc_value,
+                    exc_info=(exc_type, exc_value, exc_traceback),
+                )
+            except Exception:  # noqa: BLE001
+                # Logger itself failed; fall back to a single-line
+                # write so we don't trigger per-character capture.
+                try:
+                    sys.__stderr__.write(
+                        f'{prefix}: {exc_type}: {exc_value}\n'
+                    )
+                except Exception:
+                    pass
+
+        def _thread_excepthook(args):
+            if args.exc_type is SystemExit:
+                return
+            tname = args.thread.name if args.thread is not None else '<unknown>'
+            _log_exc(
+                f'unhandled exception in thread {tname}',
+                args.exc_type, args.exc_value, args.exc_traceback,
+            )
+
+        def _sys_excepthook(exc_type, exc_value, exc_traceback):
+            if exc_type is SystemExit:
+                return
+            _log_exc(
+                'unhandled exception (main thread)',
+                exc_type, exc_value, exc_traceback,
+            )
+
+        try:
+            threading.excepthook = _thread_excepthook
+        except Exception as ex:  # noqa: BLE001
+            LOGGER.debug(f'unable to install threading.excepthook: {ex}')
+        try:
+            sys.excepthook = _sys_excepthook
+        except Exception as ex:  # noqa: BLE001
+            LOGGER.debug(f'unable to install sys.excepthook: {ex}')
+
+    def _asyncio_exception_handler(self, loop, context):
+        msg = context.get('message', 'asyncio exception')
+        exc = context.get('exception')
+        if exc is not None:
+            LOGGER.error(
+                'asyncio: %s: %s: %s',
+                msg, type(exc).__name__, exc,
+                exc_info=(type(exc), exc, exc.__traceback__),
+            )
+        else:
+            LOGGER.error('asyncio: %s context=%r', msg, context)
 
     def _start_heartbeat_log(self):
         if self._heartbeat_thread is not None and self._heartbeat_thread.is_alive():

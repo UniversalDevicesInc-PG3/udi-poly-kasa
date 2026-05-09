@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.3.4] - 2026-05-09
+
+### Fixed
+
+- **`SmartErrorCode` poisoning the device repr (post-mortem of overnight crashes 2026-05-08/09):** when a Tapo device (commonly C-series cameras and H500 hubs) returned a `SmartErrorCode` for the `get_device_info` sub-method of an otherwise-successful multi-method query, that error sentinel got cached in the device's `_last_update`. From then on every f-string containing the device (e.g. `LOGGER.debug(f'... dev={self.dev}')` in `connect_a`) evaluated `__repr__ → self.model → device_info → _get_device_info → di["model"]` and raised `TypeError: 'SmartErrorCode' object is not subscriptable`. Patched the vendored `kasa/smart/smartdevice.py:_get_device_info` to detect a non-dict `get_device_info`/`component_nego` and raise a clean `DeviceError`, and to fall back to safe defaults for any individual field that's missing.
+- **`Device.__repr__` now exception-safe (vendored):** even with the patch above, `__repr__` used to be able to raise out of any logging call. It now degrades to `<DeviceType at host - repr unavailable: <ExceptionName>>` instead, so logging a device never tears down the calling thread.
+- **Polling thread no longer dies on coroutine errors:** `SmartDeviceNode._run_coro` only caught `FutureTimeoutError`, so any other exception from the coroutine propagated up to `handler_poll`. When that thread died, Python's default `threading.excepthook` wrote the multi-line annotated Python 3.11 traceback to stderr, and `udi_interface`'s stderr capture turned each character of every `^` caret line into its own `ERROR udi_interface:write: ^` log record (~27,000 lines per crash, dominating the log). `_run_coro` now catches `Exception`, logs one structured record with `exc_info`, and returns the caller's `default` so the polling thread keeps running.
+
+### Added
+
+- **Global exception hooks:** the controller now installs `threading.excepthook`, `sys.excepthook`, and `loop.set_exception_handler` so any otherwise-uncaught exception (including async tasks that fall off the loop) is routed through `LOGGER.error` as a single record. This is a defence-in-depth measure to keep stderr-per-character spam from ever reappearing if a new path leaks an exception in the future.
+
 ## [3.3.3] - 2026-05-08
 
 ### Fixed

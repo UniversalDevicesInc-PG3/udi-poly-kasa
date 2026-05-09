@@ -91,6 +91,14 @@ class SmartDeviceNode(Node):
         bound it. Logs a warning when the call takes longer than the
         controller's slow-future threshold so we can spot mainloop pressure
         before it escalates to a watchdog kill.
+
+        Any exception raised by the coroutine is caught and logged here.
+        Re-raising into the caller is what handler_poll runs into, and an
+        un-caught exception there terminates the polling thread and dumps
+        a multi-line annotated traceback to stderr; udi_interface's stderr
+        capture then writes one ERROR line per character (~27k lines for a
+        single Python 3.11 traceback) which buries the actual signal in
+        the log. Returning `default` keeps the polling thread alive.
         """
         if timeout is None:
             timeout = self.controller.async_future_timeout
@@ -107,6 +115,19 @@ class SmartDeviceNode(Node):
                 label,
                 timeout,
                 elapsed,
+                exc_info=True,
+            )
+            return default
+        except Exception as ex:  # noqa: BLE001
+            elapsed = time.monotonic() - start
+            LOGGER.error(
+                '%s %s raised %s after %.1fs; returning default to keep '
+                'polling thread alive: %s',
+                self.pfx,
+                label,
+                type(ex).__name__,
+                elapsed,
+                ex,
                 exc_info=True,
             )
             return default
