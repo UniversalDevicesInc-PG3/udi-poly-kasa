@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.3.5] - 2026-05-10
+
+### Fixed
+
+- **`asyncio: Unclosed client session / Unclosed connector` log spam:** every long-poll discovery cycle (every ~4 minutes) was leaking one or more `aiohttp.ClientSession` / `aiohttp.connector.TCPConnector` per known device, surfacing as ERROR-level lines in the IoX UI under `Controller:_asyncio_exception_handler`. Root cause: `kasa.Discover.discover` produces a fresh `Device` for every responding host on every cycle. For an already-known mac the plugin keeps `node.dev` (so it can re-use the existing session) and dropped the freshly-discovered `Device`. Because `update_dev(dev)` had already opened the new device's lazy `HttpClient → ClientSession`, GC then reaped it and aiohttp emitted `Unclosed client session` through the loop exception handler. `discover_new_add_device` now tracks whether the discovered device was adopted by a `SmartDeviceNode` and explicitly `await dev.disconnect()`s it (via the new `_close_device_quietly` helper) on every other path, including the `update_dev → False` and exception paths.
+
+### Added
+
+- **`Controller._close_device_quietly(dev)`:** async helper that calls `dev.disconnect()` inside a try/except so callers can drop a python-kasa `Device` without leaking its underlying aiohttp session, regardless of whether the session was ever materialised.
+- **Shutdown device cleanup:** `_handle_signal` now sweeps `self.nodes_by_mac` and disconnects each `node.dev` on the still-running mainloop before calling `poly.stop()`, so SIGTERM/reload doesn't strand long-lived sessions either.
+
+### Changed
+
+- **`_asyncio_exception_handler` demotes `Unclosed client session` / `Unclosed connector` to DEBUG.** These are aiohttp GC-cleanup notices, not real failures; the actual leak source is fixed above. Any residual emissions (e.g. from a shutdown race) no longer look like errors in the IoX UI.
+
 ## [3.3.4] - 2026-05-09
 
 ### Fixed

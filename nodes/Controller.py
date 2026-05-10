@@ -153,6 +153,14 @@ class Controller(Node):
             name = str(signum)
         LOGGER.warning(f'received signal {name}; shutting down')
         self._heartbeat_stop.set()
+        # Close per-node aiohttp ClientSessions while the mainloop is
+        # still running. If we let poly.stop() tear things down first,
+        # the sessions are reaped in interpreter shutdown order and
+        # asyncio prints a burst of "Unclosed client session" warnings.
+        try:
+            self._close_known_devices_on_shutdown()
+        except Exception as ex:  # noqa: BLE001
+            LOGGER.debug(f'_close_known_devices_on_shutdown error: {ex}')
         try:
             self.poly.stop()
         except Exception as ex:
@@ -215,6 +223,24 @@ class Controller(Node):
     def _asyncio_exception_handler(self, loop, context):
         msg = context.get('message', 'asyncio exception')
         exc = context.get('exception')
+        # aiohttp emits "Unclosed client session" / "Unclosed connector"
+        # via the loop exception handler from ClientSession.__del__ when
+        # GC reaps a session that wasn't explicitly closed. The plugin
+        # closes freshly-discovered devices that aren't retained on a
+        # node (see _close_device_quietly), but a residual race during
+        # shutdown / GC ordering can still surface these. They are
+        # cleanup noise, not real failures, so log at DEBUG to avoid
+        # confusing operators reading the IoX UI.
+        if (
+            exc is None
+            and isinstance(msg, str)
+            and (
+                msg.startswith('Unclosed client session')
+                or msg.startswith('Unclosed connector')
+            )
+        ):
+            LOGGER.debug('asyncio: %s', msg)
+            return
         if exc is not None:
             LOGGER.error(
                 'asyncio: %s: %s: %s',
@@ -223,6 +249,64 @@ class Controller(Node):
             )
         else:
             LOGGER.error('asyncio: %s context=%r', msg, context)
+
+    async def _close_device_quietly(self, dev):
+        """Disconnect a python-kasa Device, swallowing all errors.
+
+        Fresh Device objects produced by Discover that we don't intend
+        to retain on a SmartDeviceNode must have their underlying
+        aiohttp ClientSession closed; otherwise GC fires "Unclosed
+        client session" / "Unclosed connector" warnings every
+        long-poll cycle (see Controller.discover_new_add_device).
+        """
+        if dev is None:
+            return
+        disconnect = getattr(dev, 'disconnect', None)
+        if disconnect is None:
+            return
+        try:
+            await disconnect()
+        except Exception as ex:  # noqa: BLE001
+            LOGGER.debug(
+                f'disconnect() on {getattr(dev, "host", "?")} raised '
+                f'{type(ex).__name__}: {ex}'
+            )
+
+    def _close_known_devices_on_shutdown(self):
+        """Close aiohttp sessions held by long-lived node Devices.
+
+        Without this, a SIGTERM/reload leaves the per-device HttpClient
+        ClientSessions to be reaped during interpreter shutdown, which
+        produces a burst of "Unclosed client session" warnings via the
+        asyncio loop exception handler that the operator then sees in
+        the next plugin start's tail of the previous log.
+        """
+        devs = []
+        try:
+            for node in list(self.nodes_by_mac.values()):
+                d = getattr(node, 'dev', None)
+                if d is not None:
+                    devs.append(d)
+        except Exception as ex:  # noqa: BLE001
+            LOGGER.debug(f'collecting node devices for shutdown failed: {ex}')
+            return
+        if not devs:
+            return
+        loop = getattr(self, 'mainloop', None)
+        if loop is None or not loop.is_running():
+            return
+
+        async def _close_all():
+            await asyncio.gather(
+                *(self._close_device_quietly(d) for d in devs),
+                return_exceptions=True,
+            )
+
+        try:
+            fut = asyncio.run_coroutine_threadsafe(_close_all(), loop)
+            fut.result(timeout=5)
+        except Exception as ex:  # noqa: BLE001
+            LOGGER.debug(f'shutdown device cleanup error: {ex}')
 
     def _start_heartbeat_log(self):
         if self._heartbeat_thread is not None and self._heartbeat_thread.is_alive():
@@ -591,6 +675,13 @@ class Controller(Node):
         #return True
 
     async def discover_new_add_device(self,dev):
+        # Track whether the discovered Device has been adopted by a
+        # SmartDeviceNode (i.e. someone is going to keep using its
+        # aiohttp ClientSession). Anything else must be disconnected
+        # before we drop the reference; otherwise GC reaps an open
+        # session and asyncio fires "Unclosed client session" /
+        # "Unclosed connector" warnings every long-poll cycle.
+        keep_dev = False
         try:
             LOGGER.debug(f'enter: host={dev.host}')
             smac = self.smac(dev.mac)
@@ -615,11 +706,25 @@ class Controller(Node):
                         # Previously connected node
                         LOGGER.warning(f"Connected:{node.is_connected()} '{node.name}' host is {node.host} same as {dev.host}")
                         await node.connect_a()
+                # The freshly-discovered Device duplicates node.dev for
+                # an already-known host; node.dev is what get polled and
+                # reused, so this discovery's Device is unused and must
+                # be disconnected (handled in the finally block).
             else:
                 LOGGER.warning(f'Found a new device {dev.mac}, adding {dev.alias}')
-                self.add_device_node(dev=dev)
+                added = self.add_device_node(dev=dev)
+                # add_device_node returns the existing node when an
+                # idempotency-guard match wins (rare cross-thread race),
+                # in which case our `dev` was not retained. Only treat
+                # the device as kept when a brand-new node was created
+                # whose self.dev is exactly our object.
+                if added is not None and getattr(added, 'dev', None) is dev:
+                    keep_dev = True
         except Exception as ex:
             LOGGER.error(f'{ex} {dev}',exc_info=True)
+        finally:
+            if not keep_dev:
+                await self._close_device_quietly(dev)
             
     async def discover_single(self, host=None):
         LOGGER.debug(f'enter: host={host}')
