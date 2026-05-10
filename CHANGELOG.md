@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.3.6] - 2026-05-10
+
+### Fixed
+
+- **Long-poll spam from offline / circuit-broken hosts:** once a host had tripped the per-host circuit breaker, every 4-minute longPoll still fell through to `update_a → controller.update_dev → dev.update()` and paid the full ~12 s kasa-protocol TCP timeout for each offline node, generating `Controller:update_dev: Failed to update ... [Errno 64] Host is down` ERROR records and the recurring `mainloop is under pressure` warnings. `SmartDeviceNode._longPoll_a` now early-exits when `controller.host_should_skip(self.host)`, and `SmartDeviceNode.connect_a`'s breaker check is no longer gated on `self.dev is None` — both paths now fast-fail without touching the network.
+
+### Added
+
+- **Cheap TCP liveness probe inside shortPoll for fast reconnect.** New `Controller.host_quick_probe(host, port=9999, timeout=1.0s)` does a single `asyncio.open_connection` against the legacy Kasa control port (TCP 9999) and treats either a successful connect *or* a `ConnectionRefusedError` as "host alive" — the latter case is what proves a Tapo SMART device on 80/443 is reachable even though 9999 is closed. On alive, the per-host circuit breaker is reset via the existing `host_record_success` (so the next normal poll runs the full kasa probe); on dead, `next_probe` is bumped by `host_quick_probe_interval` (30 s default) and we return silently. Companion `Controller.host_should_quick_probe(host)` gates the cadence so a wall of offline hosts can't dominate the mainloop. `SmartDeviceNode._shortPoll_a` calls these for circuit-broken hosts and falls through to `connect_a()` on a successful probe. Net effect: an offline device that comes back online recovers within ~one shortPoll period (≤ ~30 s) instead of waiting up to the 15-minute backoff cap or the next 4-minute broadcast discovery sweep, while paying at most a 1 s TCP-connect attempt per host every 30 s on the asyncio mainloop.
+
+### Changed
+
+- **`Controller.update_dev` failure log demoted to DEBUG when the host was already circuit-broken before the attempt.** The first failure (and the threshold-trip `host %s circuit-broken` WARNING from `host_record_failure`) still surfaces at WARNING/ERROR; subsequent steady-state failures from the same offline host no longer flood the log. The recovery transition continues to log `host %s circuit reset after success` at INFO via `host_record_success`.
+
 ## [3.3.5] - 2026-05-10
 
 ### Fixed

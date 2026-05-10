@@ -60,8 +60,21 @@ class Controller(Node):
         # stop being probed by per-node connect_a/discover_single calls until
         # their next_try monotonic time. The longPoll discover sweep still
         # re-tests them at its 4-minute cadence.
-        self._host_state = {}  # host -> {"fail": int, "next_try": float}
+        # State shape (per host): {"fail": int, "next_try": float, "next_probe": float}.
+        # next_probe gates the cheap TCP-level reconnect probe driven by
+        # SmartDeviceNode._shortPoll_a; it lives independently of next_try
+        # so we can re-test offline hosts much more cheaply (and more
+        # often) than the full kasa protocol probe.
+        self._host_state = {}
         self._host_breaker_threshold = 3
+        # Cheap TCP-connect probe used inside shortPoll to detect a
+        # circuit-broken host coming back online without paying a 5-12s
+        # kasa protocol timeout. 9999 is the legacy Kasa control port; on
+        # Tapo SMART devices the port may be closed but the kernel sends
+        # a RST which we treat as "host alive" (see host_quick_probe).
+        self.host_quick_probe_timeout = 1.0
+        self.host_quick_probe_interval = 30.0
+        self.host_quick_probe_port = 9999
         # Per-host discover_single bound; one slow host shouldn't dominate a
         # poll cycle. python-kasa's default is 5s; we bound a bit tighter so
         # multiple unreachable hosts add up to less mainloop blocking before
@@ -465,6 +478,13 @@ class Controller(Node):
     async def update_dev(self,dev):
         ret = False
         host = getattr(dev, 'host', None)
+        # Snapshot whether the host is already circuit-broken at the
+        # start of this attempt. If yes, demote the failure log to
+        # DEBUG so an offline host doesn't generate a steady-state
+        # ERROR per poll cycle. The breaker-threshold WARNING in
+        # host_record_failure still covers the down transition, and
+        # host_record_success still covers the up transition.
+        was_broken = self.host_should_skip(host)
         try:
             await dev.update()
             ret = True
@@ -485,7 +505,8 @@ class Controller(Node):
                 f'Update failed: {type(ex).__name__}: {ex}',
                 source='update',
             )
-            LOGGER.error(f"Failed to update {ex}: {dev}")
+            log = LOGGER.debug if was_broken else LOGGER.error
+            log(f"Failed to update {ex}: {dev}")
         except Exception as ex:
             self.host_record_failure(host)
             self.set_device_notice(
@@ -493,7 +514,10 @@ class Controller(Node):
                 f'Update failed: {type(ex).__name__}: {ex}',
                 source='update',
             )
-            LOGGER.error(f"Failed to update {ex}: {dev}", exc_info=True)
+            if was_broken:
+                LOGGER.debug(f"Failed to update {ex}: {dev}", exc_info=True)
+            else:
+                LOGGER.error(f"Failed to update {ex}: {dev}", exc_info=True)
         if ret:
             self.host_record_success(host)
             self.clear_device_notice(dev)
@@ -592,7 +616,9 @@ class Controller(Node):
     def host_record_failure(self, host):
         if host is None:
             return
-        s = self._host_state.setdefault(host, {'fail': 0, 'next_try': 0.0})
+        s = self._host_state.setdefault(
+            host, {'fail': 0, 'next_try': 0.0, 'next_probe': 0.0}
+        )
         s['fail'] += 1
         # 60s, 120s, 240s, 480s, 960s, capped at 15 minutes.
         backoff = min(15 * 60, 30 * (2 ** min(s['fail'], 5)))
@@ -610,9 +636,88 @@ class Controller(Node):
         if host is None:
             return
         prev = self._host_state.get(host)
-        self._host_state[host] = {'fail': 0, 'next_try': 0.0}
+        self._host_state[host] = {'fail': 0, 'next_try': 0.0, 'next_probe': 0.0}
         if prev is not None and prev.get('fail', 0) >= self._host_breaker_threshold:
             LOGGER.info('host %s circuit reset after success', host)
+
+    def host_should_quick_probe(self, host):
+        """True iff the host is currently circuit-broken and the per-host
+        TCP-probe cooldown (`next_probe`) has elapsed.
+
+        Used by SmartDeviceNode._shortPoll_a to opportunistically re-test
+        an offline host with a sub-second TCP connect, instead of waiting
+        for next_try (up to 15 min) or for the broadcast discovery sweep
+        (every ~4 min).
+        """
+        if host is None:
+            return False
+        s = self._host_state.get(host)
+        if s is None:
+            return False
+        if s.get('fail', 0) < self._host_breaker_threshold:
+            return False
+        return time.monotonic() >= s.get('next_probe', 0.0)
+
+    async def host_quick_probe(self, host, port=None, timeout=None):
+        """Cheap TCP-level liveness probe for circuit-broken hosts.
+
+        Returns True if the host accepts a TCP connect or refuses with
+        RST (both prove the host is alive on the network), False on
+        timeout / EHOSTDOWN / EHOSTUNREACH / ENETUNREACH.
+
+        On alive: resets the circuit breaker via host_record_success
+        (which only logs at the down -> up transition) so the next
+        poll uses the real kasa protocol.
+        On dead: bumps `next_probe` by host_quick_probe_interval so the
+        probe doesn't fire on every shortPoll cycle.
+
+        Never logs per-call; the only operator-visible log is the
+        existing breaker-reset INFO line on the recovery transition.
+        """
+        if host is None:
+            return False
+        if port is None:
+            port = self.host_quick_probe_port
+        if timeout is None:
+            timeout = self.host_quick_probe_timeout
+        alive = False
+        writer = None
+        try:
+            reader, writer = await asyncio.wait_for(
+                asyncio.open_connection(host, port), timeout=timeout
+            )
+            alive = True
+        except ConnectionRefusedError:
+            # Host is on the network and the kernel sent us a RST;
+            # the kasa control port may simply be closed (e.g. Tapo
+            # devices that listen on 80/443 instead). Treat as alive.
+            alive = True
+        except (asyncio.TimeoutError, OSError):
+            alive = False
+        except Exception as ex:  # noqa: BLE001
+            LOGGER.debug(
+                f'host_quick_probe({host}:{port}) unexpected '
+                f'{type(ex).__name__}: {ex}'
+            )
+            alive = False
+        finally:
+            if writer is not None:
+                try:
+                    writer.close()
+                    try:
+                        await writer.wait_closed()
+                    except Exception:  # noqa: BLE001
+                        pass
+                except Exception:  # noqa: BLE001
+                    pass
+        if alive:
+            self.host_record_success(host)
+        else:
+            s = self._host_state.setdefault(
+                host, {'fail': 0, 'next_try': 0.0, 'next_probe': 0.0}
+            )
+            s['next_probe'] = time.monotonic() + self.host_quick_probe_interval
+        return alive
 
     def is_unsupported_discovered_type(self, dev):
         """Skip device classes this plugin cannot yet represent as nodes."""

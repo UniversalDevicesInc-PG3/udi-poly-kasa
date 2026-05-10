@@ -174,8 +174,25 @@ class SmartDeviceNode(Node):
             LOGGER.warning(f'{self.pfx} Not ready, skipping')
             return
         if not self.connected:
-            LOGGER.debug(f'{self.pfx} Not connected, skipping')
-            return
+            # When the host is circuit-broken, opportunistically TCP
+            # probe to detect it coming back online without paying the
+            # full 5-12s kasa protocol timeout. host_should_quick_probe
+            # gates this to once per host_quick_probe_interval (default
+            # 30s) so a wall of offline hosts can't dominate the
+            # mainloop. On alive, host_quick_probe resets the breaker
+            # and we fall through to connect_a; on dead, return silently
+            # (no per-poll spam).
+            if self.controller.host_should_quick_probe(self.host):
+                if not await self.controller.host_quick_probe(self.host):
+                    LOGGER.debug(f'{self.pfx} quick-probe says down, skipping')
+                    return
+                LOGGER.debug(
+                    f'{self.pfx} quick-probe says alive; falling through to '
+                    f'connect_a (breaker-reset INFO will follow)'
+                )
+            else:
+                LOGGER.debug(f'{self.pfx} Not connected, skipping')
+                return
         if await self.connect_a():
             await self.set_state_a(set_energy=False)
         LOGGER.debug(f'{self.pfx} exit: {self.name}')
@@ -198,6 +215,17 @@ class SmartDeviceNode(Node):
         if not self.ready:
             LOGGER.warning(f'{self.pfx} Not ready, skipping')
             return
+        # When a host is circuit-broken, skip the longPoll entirely.
+        # Without this gate, an offline host pays a ~12s kasa-protocol
+        # TCP timeout per long-poll (every 4 minutes), generating the
+        # `Failed to update ... Host is down` ERROR spam and the
+        # `mainloop is under pressure` warnings. shortPoll's TCP probe
+        # is responsible for detecting the host coming back online.
+        if self.controller.host_should_skip(self.host):
+            LOGGER.debug(
+                f'{self.pfx} skipping longPoll; host {self.host} circuit-broken'
+            )
+            return
         if not self.connected:
             LOGGER.info(f'{self.pfx} Not connected, will retry...')
             await self.connect_a()
@@ -215,8 +243,13 @@ class SmartDeviceNode(Node):
             LOGGER.debug(f'{self.pfx} connected={self.is_connected()}')
             # When the controller's circuit breaker has marked this host as
             # repeatedly unreachable, don't pay the discovery/update timeout
-            # cost again until next_try elapses or the longPoll re-test wins.
-            if self.dev is None and self.controller.host_should_skip(self.host):
+            # cost again until next_try elapses, the longPoll re-test wins,
+            # or shortPoll's TCP probe resets the breaker. Apply this
+            # regardless of whether self.dev is set; an existing Device
+            # whose host is offline still pays a 5-12s timeout in
+            # update_a -> dev.update() and is the dominant source of
+            # `Failed to update ... Host is down` log spam.
+            if self.controller.host_should_skip(self.host):
                 LOGGER.debug(f'{self.pfx} skipping connect; host circuit-broken')
                 self.set_connected(False)
                 return False
