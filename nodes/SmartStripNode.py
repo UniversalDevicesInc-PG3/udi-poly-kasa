@@ -83,16 +83,18 @@ class SmartStripNode(SmartDeviceNode):
         LOGGER.debug(f'{self.pfx} exit: dev={self.dev}')
 
     def add_children(self):
-        LOGGER.info(f'{self.pfx} {self.dev.alias} has {len(self.dev.children)+1} children')
+        LOGGER.info(f'{self.pfx} {self.dev.alias} has {len(self.dev.children)} child plugs')
+        child_nodes = []
         for pnum in range(len(self.dev.children)):
             naddress = "{}{:02d}".format(self.address,pnum+1)
             nname    = self.dev.children[pnum].alias
             LOGGER.info(f"{self.pfx} adding plug num={pnum} address={naddress} name={nname}")
             node = self.controller.add_device_node(parent=self, address_suffix_num=pnum+1, dev=self.dev.children[pnum])
-            if node is False:
+            if node in (False, None):
                 LOGGER.error(f'{self.pfx} Failed to add node num={pnum} address={naddress} name={nname}')
             else:
-                self.child_nodes.append(node)
+                child_nodes.append(node)
+        self.child_nodes = child_nodes
 
     async def set_children_drivers_a(self,set_energy=True):
         LOGGER.debug(f'{self.pfx} enter: {self.dev}')

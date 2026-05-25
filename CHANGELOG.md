@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.3.7] - 2026-05-25
+
+### Fixed
+
+- **HS300 power strip child nodes were not being added:** the idempotency guard added for issue `#25` keyed devices by MAC address, but `DeviceType.StripSocket` children share the parent strip's MAC in the plugin path. On first discovery of `TP-LINK_Power Strip_8C16`, each `add_children()` call therefore matched the already-added parent strip node and returned it as if the child outlet already existed, so none of the six plug nodes were created. Strip sockets now use their unique `device_id` as the add-node identity key while other devices continue to use MACs.
+- **Strip reconnect/startup child bookkeeping:** `SmartStripNode.add_children()` now rebuilds `self.child_nodes` from the actual add results instead of appending forever, preventing duplicate/stale entries across reconnects and avoiding follow-on poll errors caused by the wrong node type being retained in the child list.
+
 ## [3.3.6] - 2026-05-10
 
 ### Fixed

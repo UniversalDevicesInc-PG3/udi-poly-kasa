@@ -881,6 +881,28 @@ class Controller(Node):
             on_discovered=self.discover_new_add_device
             )
 
+    def _node_identity_key(self, dev=None, cfg=None):
+        """Return the stable identity key used by the add-node guard.
+
+        Strip sockets all live behind the parent strip's MAC address, so using
+        `mac` alone collapses every child onto the parent node. Prefer the
+        child `device_id` for strip sockets and fall back to the device MAC for
+        everything else.
+        """
+        if dev is not None and str(dev.device_type) == 'DeviceType.StripSocket':
+            device_id = getattr(dev, 'device_id', None)
+            if device_id:
+                return self.smac(device_id)
+        if cfg is not None and cfg.get('type') in ('SmartStripPlug', 'DeviceType.StripSocket'):
+            device_id = cfg.get('device_id')
+            if device_id:
+                return self.smac(device_id)
+        if dev is not None and getattr(dev, 'mac', None):
+            return self.smac(dev.mac)
+        if cfg is not None and cfg.get('mac'):
+            return self.smac(cfg['mac'])
+        return None
+
     # Add a node based on dev returned from discover or the stored config.
     def add_device_node(self, parent=None, address_suffix_num=None, dev=None, cfg=None):
         LOGGER.debug(f'enter: dev={dev}')
@@ -902,7 +924,16 @@ class Controller(Node):
                 address = get_valid_node_address(mac)
             else:
                 address = get_valid_node_address("{}{:02d}".format(mac,address_suffix_num))
-            cfg  = { "type": type, "name": get_valid_node_name(name), "host": dev.host, "mac": mac, "model": dev.model, "address": address}
+            cfg  = {
+                "type": type,
+                "name": get_valid_node_name(name),
+                "host": dev.host,
+                "mac": mac,
+                "model": dev.model,
+                "address": address,
+            }
+            if type == 'DeviceType.StripSocket':
+                cfg['device_id'] = getattr(dev, 'device_id', None)
         elif cfg is not None:
             name = cfg['name']
         else:
@@ -916,7 +947,7 @@ class Controller(Node):
         # (canonical identity) and fall back to address (in case the node was
         # added before nodes_by_mac was populated, e.g. from getNodesFromDb on
         # restart).
-        mac_key = self.smac(cfg['mac']) if cfg.get('mac') else None
+        mac_key = self._node_identity_key(dev=dev, cfg=cfg)
         existing = self.nodes_by_mac.get(mac_key) if mac_key else None
         if existing is None:
             existing = self.poly.getNode(cfg['address'])
@@ -958,7 +989,9 @@ class Controller(Node):
         if node is None:
             LOGGER.error(f"Unable to retrieve node address {cfg['address']} for {type} returned {node}")
         else:
-            self.nodes_by_mac[self.smac(cfg['mac'])] = node
+            identity_key = self._node_identity_key(dev=dev, cfg=cfg)
+            if identity_key is not None:
+                self.nodes_by_mac[identity_key] = node
         LOGGER.debug(f'exit: dev={dev}')
         return node
 
