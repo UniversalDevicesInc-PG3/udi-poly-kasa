@@ -886,17 +886,22 @@ class Controller(Node):
 
         Strip sockets all live behind the parent strip's MAC address, so using
         `mac` alone collapses every child onto the parent node. Prefer the
-        child `device_id` for strip sockets and fall back to the device MAC for
-        everything else.
+        child `device_id` for strip sockets. If the child `device_id` is not
+        yet available, fall back to the child node address, not the parent MAC.
+        All other devices continue to use their device MAC.
         """
-        if dev is not None and str(dev.device_type) == 'DeviceType.StripSocket':
-            device_id = getattr(dev, 'device_id', None)
-            if device_id:
-                return self.smac(device_id)
         if cfg is not None and cfg.get('type') in ('SmartStripPlug', 'DeviceType.StripSocket'):
             device_id = cfg.get('device_id')
             if device_id:
                 return self.smac(device_id)
+            if cfg.get('address'):
+                return f"address_{cfg['address']}"
+            return None
+        if dev is not None and str(dev.device_type) == 'DeviceType.StripSocket':
+            device_id = getattr(dev, 'device_id', None)
+            if device_id:
+                return self.smac(device_id)
+            return None
         if dev is not None and getattr(dev, 'mac', None):
             return self.smac(dev.mac)
         if cfg is not None and cfg.get('mac'):

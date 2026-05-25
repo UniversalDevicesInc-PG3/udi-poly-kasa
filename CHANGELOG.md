@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.3.8] - 2026-05-25
+
+### Fixed
+
+- **HS300 strip child poll crash after 3.3.7:** some strip child nodes could still be reused as the wrong node class during restart/upgrade, leaving a `SmartStripNode` in a strip parent's `child_nodes` list and causing repeated `_shortPoll_a` crashes like `AttributeError: 'SmartStripNode' object has no attribute 'set_drivers_a'` for `Plug 1`. Strip-socket identity now falls back to the child address instead of the parent MAC when `device_id` is unavailable, and strip parents now refuse to retain non-`SmartStripPlug_*` children in `child_nodes`.
+- **Defensive handling for stale wrong-class strip child nodes:** if PG3 already contains a strip child node with the wrong node definition, `SmartStripNode` now detects that the backing device is not actually a strip parent and safely treats it as a leaf device instead of trying to manage children, which stops the recurring poll exception until the stale node can be rebuilt cleanly.
+
 ## [3.3.7] - 2026-05-25
 
 ### Fixed

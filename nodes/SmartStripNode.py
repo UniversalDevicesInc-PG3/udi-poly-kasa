@@ -9,6 +9,7 @@ class SmartStripNode(SmartDeviceNode):
     def __init__(self, controller, address, name, dev=None, cfg=None):
         self.ready = False
         self.name = name
+        self._invalid_strip_dev_logged = False
         self.drivers = [
             {'driver': 'ST', 'value': 0, 'uom': 51, 'name': 'State'},
             {'driver': 'GV0', 'value': 0, 'uom': 2, 'name': 'Connected'},
@@ -54,9 +55,35 @@ class SmartStripNode(SmartDeviceNode):
     def query(self):
         super().query()
 
+    def _is_parent_strip_device(self):
+        return str(getattr(self.dev, 'device_type', None)) == 'DeviceType.Strip'
+
+    def _log_invalid_strip_dev_once(self):
+        if self._invalid_strip_dev_logged:
+            return
+        self._invalid_strip_dev_logged = True
+        LOGGER.warning(
+            '%s expected strip parent device, got %s; treating this node as a leaf device',
+            self.pfx,
+            getattr(self.dev, 'device_type', None),
+        )
+
+    async def set_drivers_a(self,set_energy=True):
+        if self.dev.is_on is True:
+            self.set_on()
+        else:
+            self.set_off()
+        if set_energy:
+            await self._set_energy_a()
+
     async def set_state_a(self,set_energy=True):
         LOGGER.debug(f'{self.pfx} enter: dev={self.dev}')
         if await self.update_a():
+            if not self._is_parent_strip_device():
+                self._log_invalid_strip_dev_once()
+                await self.set_drivers_a(set_energy=set_energy)
+                LOGGER.debug(f'{self.pfx} exit:  dev={self.dev}')
+                return
             if set_energy:
                 await self._set_energy_a()
             # We dont update children since that forces an update on myself each time
@@ -79,10 +106,19 @@ class SmartStripNode(SmartDeviceNode):
         #    self.set_all_drivers()
         #except Exception as ex:
         #    LOGGER.error(f'{self.pfx} set_all_drivers failed: {ex}',exc_info=True)
+        if not self._is_parent_strip_device():
+            self._log_invalid_strip_dev_once()
+            self.child_nodes = []
+            LOGGER.debug(f'{self.pfx} exit: dev={self.dev}')
+            return
         self.add_children()
         LOGGER.debug(f'{self.pfx} exit: dev={self.dev}')
 
     def add_children(self):
+        if not self._is_parent_strip_device():
+            self._log_invalid_strip_dev_once()
+            self.child_nodes = []
+            return
         LOGGER.info(f'{self.pfx} {self.dev.alias} has {len(self.dev.children)} child plugs')
         child_nodes = []
         for pnum in range(len(self.dev.children)):
@@ -92,6 +128,15 @@ class SmartStripNode(SmartDeviceNode):
             node = self.controller.add_device_node(parent=self, address_suffix_num=pnum+1, dev=self.dev.children[pnum])
             if node in (False, None):
                 LOGGER.error(f'{self.pfx} Failed to add node num={pnum} address={naddress} name={nname}')
+            elif node is self or not getattr(node, 'id', '').startswith('SmartStripPlug_'):
+                LOGGER.error(
+                    "%s Ignoring unexpected child node for %s: address=%s type=%s id=%s",
+                    self.pfx,
+                    nname,
+                    getattr(node, 'address', None),
+                    type(node).__name__,
+                    getattr(node, 'id', None),
+                )
             else:
                 child_nodes.append(node)
         self.child_nodes = child_nodes
@@ -99,6 +144,15 @@ class SmartStripNode(SmartDeviceNode):
     async def set_children_drivers_a(self,set_energy=True):
         LOGGER.debug(f'{self.pfx} enter: {self.dev}')
         for node in self.child_nodes:
+            if node is self or not getattr(node, 'id', '').startswith('SmartStripPlug_'):
+                LOGGER.error(
+                    "%s skipping invalid child node address=%s type=%s id=%s",
+                    self.pfx,
+                    getattr(node, 'address', None),
+                    type(node).__name__,
+                    getattr(node, 'id', None),
+                )
+                continue
             await node.set_drivers_a(set_energy=set_energy)
         LOGGER.debug(f'{self.pfx} exit: {self.dev}')
 
