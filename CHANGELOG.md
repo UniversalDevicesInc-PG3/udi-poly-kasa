@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.3.9] - 2026-06-17
+
+### Fixed
+
+- **Dimmable wall switches not added on discovery:** newer python-kasa reports HS220-style dimmers as `DeviceType.Dimmer` instead of the legacy `DeviceType.WallSwitch`, so discovery logged `Device type not yet supported: DeviceType.Dimmer` and skipped the node. `Controller.add_device_node` now maps `DeviceType.Dimmer` to the existing `SmartDimmerNode`, and `SmartDimmerNode` restores nodedef/drivers correctly when reloaded from saved config without a live `dev` object.
+
 ## [3.3.8] - 2026-05-25
 
 ### Fixed

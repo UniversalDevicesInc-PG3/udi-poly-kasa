@@ -979,7 +979,11 @@ class Controller(Node):
                 self.add_node(cfg['address'],SmartStripNode(self, cfg['address'], cfg['name'],  dev=dev, cfg=cfg))
             elif cfg['type'] == 'SmartStripPlug' or cfg['type'] == 'DeviceType.StripSocket':
                 self.add_node(cfg['address'],SmartStripPlugNode(self, parent.address, cfg['address'], cfg['name'],  dev=dev, cfg=cfg))
-            elif cfg['type'] == 'SmartDimmer' or cfg['type'] == 'DeviceType.WallSwitch':
+            elif cfg['type'] in (
+                'SmartDimmer',
+                'DeviceType.WallSwitch',
+                'DeviceType.Dimmer',
+            ):
                 self.add_node(cfg['address'],SmartDimmerNode(self, parent.address, cfg['address'], cfg['name'], dev=dev, cfg=cfg))
             elif cfg['type'] == 'SmartBulb' or cfg['type'] == 'DeviceType.Bulb':
                 self.add_node(cfg['address'],SmartBulbNode(self, parent.address, cfg['address'], cfg['name'], dev=dev, cfg=cfg))

@@ -34,7 +34,11 @@ class SmartDimmerNode(SmartDeviceNode):
             else:
                 self.id += 'N'
             cfg['emeter'] = dev.has_emeter
-        if cfg['emeter']:
+        else:
+            self.id = cfg['id']
+            if len(self.id) > 12 and self.id[12] == 'D':
+                self.drivers.append({'driver': 'GV5', 'value': 0, 'uom': 100, 'name': 'Brightness'})
+        if cfg.get('emeter'):
             self.drivers.append({'driver': 'CC', 'value': 0, 'uom': 1, 'name': 'Current Current'})
             self.drivers.append({'driver': 'CV', 'value': 0, 'uom': 72, 'name': 'Current Voltage'})
             self.drivers.append({'driver': 'CPW', 'value': 0, 'uom': 73, 'name': 'Current Power Watts'})
