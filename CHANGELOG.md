@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.3.10] - 2026-06-18
+
+### Fixed
+
+- **Poll crash on SMART/Tapo auth failures:** when a device returned a `SmartErrorCode` instead of device info (common on HS200 and other SMART-protocol gear with missing or wrong cloud credentials), debug logging that interpolated `dev={self.dev}` triggered python-kasa's `Device.__repr__`, which raised `TypeError: 'SmartErrorCode' object is not subscriptable` and aborted every shortPoll. Logging now uses a safe `_dev_desc()` helper, and saving config no longer assumes `dev.model` is readable.
+- **HS300 strip longPoll recursion on stale child nodes:** `SmartStripNode._set_energy_a` now skips non-`SmartStripPlug_*` children, matching the existing shortPoll guard in `set_children_drivers_a`, so wrong-class strip child nodes cannot recurse until stack overflow.
+
 ## [3.3.9] - 2026-06-17
 
 ### Fixed

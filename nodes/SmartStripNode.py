@@ -68,6 +68,12 @@ class SmartStripNode(SmartDeviceNode):
             getattr(self.dev, 'device_type', None),
         )
 
+    def _is_strip_plug_child(self, node):
+        return (
+            node is not self
+            and getattr(node, 'id', '').startswith('SmartStripPlug_')
+        )
+
     async def set_drivers_a(self,set_energy=True):
         if self.dev.is_on is True:
             self.set_on()
@@ -77,31 +83,33 @@ class SmartStripNode(SmartDeviceNode):
             await self._set_energy_a()
 
     async def set_state_a(self,set_energy=True):
-        LOGGER.debug(f'{self.pfx} enter: dev={self.dev}')
+        LOGGER.debug(f'{self.pfx} enter: dev={self._dev_desc(self.dev)}')
         if await self.update_a():
             if not self._is_parent_strip_device():
                 self._log_invalid_strip_dev_once()
                 await self.set_drivers_a(set_energy=set_energy)
-                LOGGER.debug(f'{self.pfx} exit:  dev={self.dev}')
+                LOGGER.debug(f'{self.pfx} exit:  dev={self._dev_desc(self.dev)}')
                 return
             if set_energy:
                 await self._set_energy_a()
             # We dont update children since that forces an update on myself each time
             await self.set_children_drivers_a(set_energy=set_energy)
             self.set_st_from_children()
-        LOGGER.debug(f'{self.pfx} exit:  dev={self.dev}')
+        LOGGER.debug(f'{self.pfx} exit:  dev={self._dev_desc(self.dev)}')
 
     async def _set_energy_a(self):
-        LOGGER.debug(f'{self.pfx} enter: dev={self.dev}')
+        LOGGER.debug(f'{self.pfx} enter: dev={self._dev_desc(self.dev)}')
         await super()._set_energy_a()
         for node in self.child_nodes:
+            if not self._is_strip_plug_child(node):
+                continue
             await node._set_energy_a()
-        LOGGER.debug(f'{self.pfx} exit:  dev={self.dev}')
+        LOGGER.debug(f'{self.pfx} exit:  dev={self._dev_desc(self.dev)}')
 
     # Called when connected is changed from False to True
     # On initial startup or a reconnect later
     def reconnected(self):
-        LOGGER.debug(f'{self.pfx} enter: dev={self.dev}')
+        LOGGER.debug(f'{self.pfx} enter: dev={self._dev_desc(self.dev)}')
         #try:
         #    self.set_all_drivers()
         #except Exception as ex:
@@ -109,10 +117,10 @@ class SmartStripNode(SmartDeviceNode):
         if not self._is_parent_strip_device():
             self._log_invalid_strip_dev_once()
             self.child_nodes = []
-            LOGGER.debug(f'{self.pfx} exit: dev={self.dev}')
+            LOGGER.debug(f'{self.pfx} exit: dev={self._dev_desc(self.dev)}')
             return
         self.add_children()
-        LOGGER.debug(f'{self.pfx} exit: dev={self.dev}')
+        LOGGER.debug(f'{self.pfx} exit: dev={self._dev_desc(self.dev)}')
 
     def add_children(self):
         if not self._is_parent_strip_device():
@@ -128,7 +136,7 @@ class SmartStripNode(SmartDeviceNode):
             node = self.controller.add_device_node(parent=self, address_suffix_num=pnum+1, dev=self.dev.children[pnum])
             if node in (False, None):
                 LOGGER.error(f'{self.pfx} Failed to add node num={pnum} address={naddress} name={nname}')
-            elif node is self or not getattr(node, 'id', '').startswith('SmartStripPlug_'):
+            elif node is self or not self._is_strip_plug_child(node):
                 LOGGER.error(
                     "%s Ignoring unexpected child node for %s: address=%s type=%s id=%s",
                     self.pfx,
@@ -142,9 +150,9 @@ class SmartStripNode(SmartDeviceNode):
         self.child_nodes = child_nodes
 
     async def set_children_drivers_a(self,set_energy=True):
-        LOGGER.debug(f'{self.pfx} enter: {self.dev}')
+        LOGGER.debug(f'{self.pfx} enter: {self._dev_desc(self.dev)}')
         for node in self.child_nodes:
-            if node is self or not getattr(node, 'id', '').startswith('SmartStripPlug_'):
+            if not self._is_strip_plug_child(node):
                 LOGGER.error(
                     "%s skipping invalid child node address=%s type=%s id=%s",
                     self.pfx,
@@ -154,13 +162,13 @@ class SmartStripNode(SmartDeviceNode):
                 )
                 continue
             await node.set_drivers_a(set_energy=set_energy)
-        LOGGER.debug(f'{self.pfx} exit: {self.dev}')
+        LOGGER.debug(f'{self.pfx} exit: {self._dev_desc(self.dev)}')
 
     # Set my ST based on the children's current ST
     # This is called by the child when their ST changes
     # and by set_state_a above
     def set_st_from_children(self):
-        LOGGER.debug(f'{self.pfx} enter: {self.dev}')
+        LOGGER.debug(f'{self.pfx} enter: {self._dev_desc(self.dev)}')
         # Check if any node is on, update their status
         for node in self.child_nodes:
             if node.getDriver('ST') is None:
@@ -170,24 +178,24 @@ class SmartStripNode(SmartDeviceNode):
                 self.set_on()
                 return
         self.set_off()
-        LOGGER.debug(f'{self.pfx} exit: {self.dev}')
+        LOGGER.debug(f'{self.pfx} exit: {self._dev_desc(self.dev)}')
 
     def newdev(self):
         return SmartStrip(self.host)
 
     def set_on(self):
-        LOGGER.debug(f'enter: {self.dev}')
+        LOGGER.debug(f'enter: {self._dev_desc(self.dev)}')
         LOGGER.debug(f'{self.pfx} setDriver(ST,100)')
         self.setDriver('ST', 100)
         self.st = True
-        LOGGER.debug(f'exit: {self.dev}')
+        LOGGER.debug(f'exit: {self._dev_desc(self.dev)}')
 
     def set_off(self):
-        LOGGER.debug(f'enter: {self.dev}')
+        LOGGER.debug(f'enter: {self._dev_desc(self.dev)}')
         LOGGER.debug(f'{self.pfx} setDriver(ST,0)')
         self.setDriver('ST', 0)
         self.st = False
-        LOGGER.debug(f'exit: {self.dev}')
+        LOGGER.debug(f'exit: {self._dev_desc(self.dev)}')
 
     def set_st(self,st):
         if st != self.st:

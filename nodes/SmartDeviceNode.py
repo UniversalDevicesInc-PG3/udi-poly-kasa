@@ -11,6 +11,35 @@ from converters import myround,bri2st,st2bri
 
 class SmartDeviceNode(Node):
 
+    @staticmethod
+    def _dev_desc(dev):
+        """Format a device for logs without calling Device.__repr__.
+
+        SMART/Tapo devices that failed auth can raise TypeError from __repr__
+        when python-kasa tries to read model from a SmartErrorCode payload.
+        """
+        if dev is None:
+            return 'None'
+        host = getattr(dev, 'host', '?')
+        try:
+            alias = getattr(dev, 'alias', None)
+            dtype = getattr(dev, 'device_type', None)
+            model = None
+            try:
+                model = dev.model
+            except Exception:
+                pass
+            parts = [str(host)]
+            if alias:
+                parts.append(repr(alias))
+            if model:
+                parts.append(f'({model})')
+            if dtype is not None:
+                parts.append(str(dtype))
+            return ' '.join(parts)
+        except Exception as ex:
+            return f'<device {host} ({type(ex).__name__}: {ex})>'
+
     def __init__(self, controller, primary, address, name, dev=None, cfg=None):
         self.controller = controller
         self.name = name
@@ -21,7 +50,7 @@ class SmartDeviceNode(Node):
             self.poll = True
         if not hasattr(self,'pfx'):
             self.pfx = f"{self.name}:"
-        LOGGER.debug(f'{self.pfx} dev={dev}')
+        LOGGER.debug(f'{self.pfx} dev={self._dev_desc(dev)}')
         LOGGER.debug(f'{self.pfx} cfg={cfg}')
         self.ready = False
         self.ready_warn = False
@@ -37,7 +66,7 @@ class SmartDeviceNode(Node):
         self._ready_wait_logged = False
         self.error_connect = False
         self.connected = None # So start will force setting proper status
-        LOGGER.debug(f'{self.pfx} controller={controller} address={address} name={name} host={self.host} id={self.id} dev={self.dev} cfg={self.cfg}')
+        LOGGER.debug(f'{self.pfx} controller={controller} address={address} name={name} host={self.host} id={self.id} dev={self._dev_desc(self.dev)} cfg={self.cfg}')
         if (not self.dev is None and self.dev.has_emeter) or (not self.cfg is None and 'emeter' in self.cfg and self.cfg['emeter']):
             self.drivers.append({'driver': 'CC', 'value': 0, 'uom': 1, 'name': 'Current Current'})
             self.drivers.append({'driver': 'CV', 'value': 0, 'uom': 72, 'name': 'Current Voltage'})
@@ -52,11 +81,11 @@ class SmartDeviceNode(Node):
         self.poly.ready()
 
     def handler_start(self):
-        LOGGER.debug(f'enter: {self.name} dev={self.dev}')
+        LOGGER.debug(f'enter: {self.name} dev={self._dev_desc(self.dev)}')
         res = self.connect()
-        LOGGER.debug(f'result:{res} {self.name} dev={self.dev}')
+        LOGGER.debug(f'result:{res} {self.name} dev={self._dev_desc(self.dev)}')
         self.ready = True
-        LOGGER.debug(f'exit: {self.name} dev={self.dev}')
+        LOGGER.debug(f'exit: {self.name} dev={self._dev_desc(self.dev)}')
 
     def handler_poll(self, polltype):
         if self.get_mon == 0:
@@ -238,7 +267,7 @@ class SmartDeviceNode(Node):
         return bool(self._run_coro(self.connect_a(), 'connect_a', default=False))
 
     async def connect_a(self):
-        LOGGER.debug(f'{self.pfx} enter: {self.name} dev={self.dev}')
+        LOGGER.debug(f'{self.pfx} enter: {self.name} dev={self._dev_desc(self.dev)}')
         if not self.is_connected():
             LOGGER.debug(f'{self.pfx} connected={self.is_connected()}')
             # When the controller's circuit breaker has marked this host as
@@ -285,17 +314,17 @@ class SmartDeviceNode(Node):
                     f"{self.pfx} Unknown exception {ex} connecting to device {self.host} will try again later",
                     exc_info=True
                 )
-        LOGGER.debug(f'{self.pfx} exit:{self.connected} {self.name} dev={self.dev}')
+        LOGGER.debug(f'{self.pfx} exit:{self.connected} {self.name} dev={self._dev_desc(self.dev)}')
         return self.is_connected()
 
     def update(self):
-        LOGGER.debug(f'enter: {self.name} dev={self.dev}')
+        LOGGER.debug(f'enter: {self.name} dev={self._dev_desc(self.dev)}')
         res = self._run_coro(self.update_a(), 'update_a', default=False)
-        LOGGER.debug(f'exit:{res} {self.name} dev={self.dev}')
+        LOGGER.debug(f'exit:{res} {self.name} dev={self._dev_desc(self.dev)}')
         return res
 
     async def update_a(self):
-        LOGGER.debug(f'enter: {self.name} dev={self.dev}')
+        LOGGER.debug(f'enter: {self.name} dev={self._dev_desc(self.dev)}')
         ret = False
         if self.dev is None:
             ret = await self.connect_a()
@@ -306,7 +335,7 @@ class SmartDeviceNode(Node):
                     False,
                     f'{self.pfx} failed updating, see log'
                 )
-        LOGGER.debug(f'exit:{ret} {self.name} dev={self.dev}')
+        LOGGER.debug(f'exit:{ret} {self.name} dev={self._dev_desc(self.dev)}')
         return ret
 
     def set_on(self):
@@ -346,7 +375,7 @@ class SmartDeviceNode(Node):
 
     async def set_state_a(self,set_energy=True):
         try:
-            LOGGER.debug(f'{self.pfx} enter: dev={self.dev}')
+            LOGGER.debug(f'{self.pfx} enter: dev={self._dev_desc(self.dev)}')
             # This doesn't call set_energy, since that is only called on long_poll's
             # We don't use self.connected here because dev might be good, but device is unplugged
             # So then when it's plugged back in the same dev will still work
@@ -380,9 +409,10 @@ class SmartDeviceNode(Node):
                     self.reconnected()
                 if set_energy:
                     await self._set_energy_a()
-            LOGGER.debug(f'{self.pfx} exit:  dev={self.dev}')
+            LOGGER.debug(f'{self.pfx} exit:  dev={self._dev_desc(self.dev)}')
         except Exception as ex:
-            LOGGER.error(f'Problem {ex} setting device state {self.dev.host}',exc_info=True)
+            host = getattr(self.dev, 'host', None) or self.host
+            LOGGER.error(f'Problem {ex} setting device state {host}',exc_info=True)
 
     def is_on(self):
         return self.dev.is_on
@@ -457,8 +487,11 @@ class SmartDeviceNode(Node):
             try:
                 self.cfg['host']  = self.dev.host
                 # Can't update host if not connected.
-                if st:
-                    self.cfg['model'] = self.dev.model
+                if st and self.dev is not None:
+                    try:
+                        self.cfg['model'] = self.dev.model
+                    except Exception:
+                        pass
                 self.controller.save_cfg(self.cfg)
             except SmartDeviceException as ex:
                 LOGGER.error(f'{self.pfx} failed: {ex}')
