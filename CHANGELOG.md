@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.3.13] - 2026-06-21
+
+### Fixed
+
+- **HS300 auth notice stuck on outlet name:** long-poll discover no longer authenticates ephemeral discovery devices when a node already exists for that identity, which was re-setting host auth notices even after successful polls. Strip parent nodes no longer sync their IoX name from a child outlet alias, strip configs are stored per-outlet (not all under the parent MAC), and strip nodes normalize rediscovered `DeviceType.Plug` handles back to `SmartStrip` on connect.
+- **Corrupt HS300 strip tree cleanup on startup:** detects misnamed strip parents (for example `Plug 3 Testing`) from saved cfg and IoX child address patterns even before SmartStrip node classes finish loading, removes outlet nodes first then the parent via `delNode`, runs again after startup connects, lets discover rebuild the strip as `SmartStrip {model}`, and posts a session-only IoX cleanup notice (cleared on restart).
+
 ## [3.3.12] - 2026-06-21
 
 ### Fixed

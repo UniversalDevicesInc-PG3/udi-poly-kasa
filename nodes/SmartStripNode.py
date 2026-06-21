@@ -55,6 +55,28 @@ class SmartStripNode(SmartDeviceNode):
             self.update()
             self.add_children()
 
+    def _normalize_strip_dev(self):
+        """Ensure the live python-kasa object is a strip parent device."""
+        if self.dev is None:
+            return
+        if self._is_parent_strip_device():
+            return
+        LOGGER.debug(
+            '%s replacing %s with SmartStrip for %s',
+            self.pfx,
+            getattr(self.dev, 'device_type', None),
+            self.host,
+        )
+        self.dev = self.newdev()
+
+    async def connect_a(self):
+        self._normalize_strip_dev()
+        return await super().connect_a()
+
+    async def update_a(self):
+        self._normalize_strip_dev()
+        return await super().update_a()
+
     def query(self):
         super().query()
 

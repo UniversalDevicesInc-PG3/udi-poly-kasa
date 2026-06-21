@@ -151,6 +151,10 @@ class Controller(Node):
         self._start_heartbeat_log()
         self.update_profile()
         self.Notices.clear()
+        try:
+            self.Data.delete('_strip_cleanup')
+        except KeyError:
+            pass
         self.mainloop = mainloop
         asyncio.set_event_loop(mainloop)
         # Route asyncio task/callback exceptions through LOGGER so they
@@ -182,6 +186,10 @@ class Controller(Node):
         if cnt == 0:
             LOGGER.error("Timed out waiting for handlers to startup")
             #self.exit()
+        try:
+            self.cleanup_corrupt_strip_nodes()
+        except Exception:
+            LOGGER.error('cleanup_corrupt_strip_nodes failed', exc_info=True)
         # Discover
         try:
             self.discover()
@@ -196,6 +204,14 @@ class Controller(Node):
         except Exception:
             LOGGER.error('drain_startup_connects failed', exc_info=True)
             self.startup_in_progress = False
+        # Nodes and plug ids may not exist yet on the first pass (IoX is
+        # still hydrating child nodes from the DB). Run cleanup again once
+        # startup connects finish so misnamed strips like "Plug 3 Testing"
+        # are removed before normal polling continues.
+        try:
+            self.cleanup_corrupt_strip_nodes()
+        except Exception:
+            LOGGER.error('cleanup_corrupt_strip_nodes failed (post-startup)', exc_info=True)
         self.ready = True
         LOGGER.info(f'exit {self.name}')
 
@@ -586,7 +602,13 @@ class Controller(Node):
                 identity = self._node_identity_key(dev=dev)
                 node = self.nodes_by_mac.get(identity) if identity else None
                 alias = getattr(dev, 'alias', None)
-                if node is not None and alias:
+                # HS300 parent alias can mirror an outlet name; only sync
+                # outlet nodes, not the strip parent itself.
+                if (
+                    node is not None
+                    and alias
+                    and not isinstance(node, SmartStripNode)
+                ):
                     self.sync_node_name(node, alias)
                 if (
                     node is not None
@@ -685,16 +707,299 @@ class Controller(Node):
                     return name
         host = getattr(dev, 'host', None)
         if host:
+            # Prefer the strip parent node name over an arbitrary outlet
+            # when several nodes share the same host IP.
+            for node in self.nodes_by_mac.values():
+                if (
+                    isinstance(node, SmartStripNode)
+                    and getattr(node, 'host', None) == host
+                ):
+                    name = getattr(node, 'name', None)
+                    if name:
+                        return name
             for node in self.nodes_by_mac.values():
                 if getattr(node, 'host', None) == host:
                     name = getattr(node, 'name', None)
                     if name:
                         return name
-            for mac in self.Data:
-                cfg = self.get_device_cfg(mac)
+            for key in self.Data:
+                cfg = self.get_device_cfg(key)
                 if cfg and cfg.get('host') == host and cfg.get('name'):
                     return cfg['name']
         return 'Device'
+
+    def _existing_node_for_dev(self, dev):
+        """Return an IoX node already managing this discovered device, if any."""
+        identity = self._node_identity_key(dev=dev)
+        if identity:
+            node = self.nodes_by_mac.get(identity)
+            if node is not None:
+                return node
+        mac = getattr(dev, 'mac', None)
+        if mac is not None:
+            node = self.poly.getNode(get_valid_node_address(mac))
+            if node is not None:
+                return node
+        return None
+
+    _STRIP_PARENT_TYPES = ('SmartStrip', 'DeviceType.Strip')
+
+    def _is_strip_plug_node(self, node):
+        return getattr(node, 'id', '').startswith('SmartStripPlug_')
+
+    def _strip_parent_address_from_cfg(self, cfg):
+        addr = cfg.get('address')
+        if addr:
+            return addr.lower()
+        mac = cfg.get('mac')
+        if mac:
+            return self.smac(mac).lower()
+        return None
+
+    def _strip_child_address_pattern(self, parent_address):
+        """Child IoX addresses by HS300 suffix pattern (``{parent}01``..)."""
+        parent_address = (parent_address or '').lower()
+        child_addrs = []
+        for addr in self.poly.getNodes():
+            addr_lower = addr.lower()
+            if addr_lower == parent_address:
+                continue
+            if not addr_lower.startswith(parent_address):
+                continue
+            suffix = addr_lower[len(parent_address):]
+            if len(suffix) == 2 and suffix.isdigit():
+                child_addrs.append(addr)
+        return sorted(child_addrs)
+
+    def _strip_child_addresses(self, parent_address):
+        """IoX addresses of SmartStripPlug children for a strip parent."""
+        child_addrs = self._strip_child_address_pattern(parent_address)
+        plug_addrs = []
+        for addr in child_addrs:
+            node = self.poly.getNode(addr)
+            if node is None or self._is_strip_plug_node(node):
+                plug_addrs.append(addr)
+        return plug_addrs if plug_addrs else child_addrs
+
+    def _is_strip_parent_cfg(self, cfg):
+        if not isinstance(cfg, dict):
+            return False
+        return cfg.get('type') in self._STRIP_PARENT_TYPES
+
+    @staticmethod
+    def _is_misnamed_strip_parent_name(name):
+        return not (name or '').strip().lower().startswith('smartstrip')
+
+    def _node_is_strip_parent(self, node, cfg=None):
+        if isinstance(node, SmartStripNode):
+            return True
+        if cfg is None:
+            cfg = getattr(node, 'cfg', None)
+        if cfg and self._is_strip_parent_cfg(cfg):
+            return True
+        node_id = getattr(node, 'id', '') or ''
+        return str(node_id).startswith('SmartStrip_')
+
+    def _outlet_cfg_names_for_host(self, host):
+        names = []
+        for key in self.Data:
+            cfg = self.get_device_cfg(key)
+            if not isinstance(cfg, dict) or cfg.get('host') != host:
+                continue
+            if cfg.get('type') not in ('SmartStripPlug', 'DeviceType.StripSocket'):
+                continue
+            name = (cfg.get('name') or '').strip()
+            if name:
+                names.append(name)
+        return names
+
+    @staticmethod
+    def _node_names_collide(parent_name, other_name):
+        parent = (parent_name or '').strip().lower()
+        other = (other_name or '').strip().lower()
+        if not parent or not other:
+            return False
+        return parent == other or parent.startswith(other) or other.startswith(parent)
+
+    def _collect_corrupt_strip_targets(self):
+        """Return misnamed HS300 strip parents plus their outlet child addresses."""
+        targets = {}
+
+        def consider(parent_address, host, name):
+            parent_address = (parent_address or '').lower()
+            if not parent_address or not self._is_misnamed_strip_parent_name(name):
+                return
+            child_addrs = self._strip_child_address_pattern(parent_address)
+            if not child_addrs and host:
+                for outlet_name in self._outlet_cfg_names_for_host(host):
+                    if self._node_names_collide(name, outlet_name):
+                        child_addrs = self._strip_child_address_pattern(parent_address)
+                        break
+            if not child_addrs:
+                return
+            targets[parent_address] = {
+                'parent_address': parent_address,
+                'host': host,
+                'name': (name or '').strip() or parent_address,
+                'child_addrs': child_addrs,
+            }
+
+        for key in list(self.Data):
+            cfg = self.get_device_cfg(key)
+            if cfg is None or not self._is_strip_parent_cfg(cfg):
+                continue
+            parent_address = self._strip_parent_address_from_cfg(cfg)
+            if parent_address is None:
+                continue
+            consider(parent_address, cfg.get('host'), cfg.get('name'))
+
+        for address in list(self.poly.getNodes()):
+            node = self.poly.getNode(address)
+            if node is None:
+                continue
+            cfg = getattr(node, 'cfg', None)
+            if not self._node_is_strip_parent(node, cfg):
+                continue
+            name = (getattr(node, 'name', '') or '').strip()
+            if not name and cfg:
+                name = (cfg.get('name') or '').strip()
+            host = getattr(node, 'host', None) or (cfg or {}).get('host')
+            consider(address, host, name)
+
+        return list(targets.values())
+
+    def _is_corrupt_strip_parent(self, strip_node):
+        """Detect HS300 parent strips renamed to an outlet alias (3.3.11 bug).
+
+        A healthy strip parent is named ``SmartStrip {model}``. A corrupt one
+        was renamed to an outlet label like ``Plug 3 Testing`` while its
+        SmartStripPlug children remain under ``{parent}01``..``{parent}06``.
+        """
+        cfg = getattr(strip_node, 'cfg', None)
+        if not self._node_is_strip_parent(strip_node, cfg):
+            return False
+        parent_name = (getattr(strip_node, 'name', '') or '').strip()
+        if not parent_name and cfg:
+            parent_name = (cfg.get('name') or '').strip()
+        if not self._is_misnamed_strip_parent_name(parent_name):
+            return False
+        parent_address = getattr(strip_node, 'address', None)
+        if parent_address is None:
+            return False
+        return bool(self._strip_child_address_pattern(parent_address))
+
+    def _forget_node_identity(self, node):
+        if node is None:
+            return
+        cfg = getattr(node, 'cfg', None)
+        identity = self._node_identity_key(cfg=cfg) if cfg else None
+        if identity and self.nodes_by_mac.get(identity) is node:
+            del self.nodes_by_mac[identity]
+        address = getattr(node, 'address', None)
+        if address:
+            prefix = f"address_{address}"
+            if self.nodes_by_mac.get(prefix) is node:
+                del self.nodes_by_mac[prefix]
+
+    def delete_cfg(self, cfg):
+        if cfg is None:
+            return
+        key = self._cfg_storage_key(cfg)
+        try:
+            self.Data.delete(key)
+        except KeyError:
+            pass
+        mac_key = self.smac(cfg.get('mac', ''))
+        if mac_key and mac_key != key:
+            try:
+                self.Data.delete(mac_key)
+            except KeyError:
+                pass
+
+    def remove_device_node(self, address):
+        """Remove a node from IoX and drop its saved cfg/identity maps."""
+        node = self.poly.getNode(address)
+        if node is None:
+            cfg = self.get_device_cfg(address)
+            if cfg is None:
+                LOGGER.debug('remove_device_node: no node for %s', address)
+                return False
+            host = cfg.get('host')
+            name = cfg.get('name', address)
+            LOGGER.warning('Removing cfg-only node %s (%s)', name, address)
+            self.delete_cfg(cfg)
+            try:
+                self.poly.delNode(address)
+            except Exception:
+                LOGGER.debug('delNode skipped for missing IoX node %s', address)
+            if host:
+                try:
+                    self.poly.Notices.delete(f"dev_{host}".replace('.', '_'))
+                except KeyError:
+                    pass
+            return True
+        cfg = getattr(node, 'cfg', None) or self.get_device_cfg(address)
+        host = getattr(node, 'host', None)
+        name = getattr(node, 'name', address)
+        LOGGER.warning('Removing node %s (%s)', name, address)
+        self.delete_cfg(cfg)
+        self._forget_node_identity(node)
+        self.poly.delNode(address)
+        if host:
+            try:
+                self.poly.Notices.delete(f"dev_{host}".replace('.', '_'))
+            except KeyError:
+                pass
+        return True
+
+    def cleanup_corrupt_strip_nodes(self):
+        """Delete misnamed strip parents and their outlet children.
+
+        PG3 requires children be removed before the parent. Discover will
+        recreate the strip tree with ``SmartStrip {model}`` naming afterward.
+        """
+        corrupt = self._collect_corrupt_strip_targets()
+        if not corrupt:
+            return
+        for target in corrupt:
+            parent_address = target['parent_address']
+            child_addrs = target['child_addrs']
+            strip_name = target['name']
+            host = target.get('host')
+            LOGGER.warning(
+                "Corrupt HS300 strip '%s' (%s): removing %s outlet child(ren) "
+                "then parent so discover can rebuild",
+                strip_name,
+                parent_address,
+                len(child_addrs),
+            )
+            for child_addr in child_addrs:
+                self.remove_device_node(child_addr)
+            self.remove_device_node(parent_address)
+            self.set_strip_cleanup_notice(host, strip_name, len(child_addrs))
+
+    def _strip_cleanup_notice_key(self, host):
+        return f"strip_cleanup_{host}".replace('.', '_')
+
+    def set_strip_cleanup_notice(self, host, strip_name, child_count):
+        """Post a session-only IoX notice after corrupt strip cleanup."""
+        if not host:
+            return
+        name = (strip_name or '').strip() or host
+        timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        body = (
+            f"HS300 strip '{name}' ({host}): removed {child_count} misconfigured "
+            f"outlet node(s) and the misnamed strip parent; discover is "
+            f"rebuilding it as SmartStrip {{model}}."
+        )
+        key = self._strip_cleanup_notice_key(host)
+        self.Notices[key] = f"[{timestamp}] [cleanup] {body}"
+        LOGGER.warning(
+            "Posted strip cleanup notice for %s (%s), %s outlet(s) removed",
+            name,
+            host,
+            child_count,
+        )
 
     # Sources ranked by how specific/useful the message is. Higher wins.
     _NOTICE_SOURCE_PRIORITY = {
@@ -910,12 +1215,23 @@ class Controller(Node):
         if self.is_unsupported_discovered_type(dev):
             self.log_unsupported_discovered_type(dev)
             return False
+        existing = self._existing_node_for_dev(dev)
+        if existing is not None:
+            identity = self._node_identity_key(dev=dev)
+            if identity is not None:
+                self.devm[identity] = True
+            LOGGER.debug(
+                f"discover_add_device: already have node for {dev.host} -> {existing.name}"
+            )
+            return True
         LOGGER.info(f"Got Device\n\tAlias:{dev.alias}\n\tModel:{dev.model}\n\tMac:{dev.mac}\n\tHost:{dev.host}")
         if not await self.update_dev(dev):
             return False
         self.add_device_node(dev=dev)
         # Add to our list of added devices
-        self.devm[self.smac(dev.mac)] = True
+        identity = self._node_identity_key(dev=dev)
+        if identity is not None:
+            self.devm[identity] = True
         LOGGER.debug(f"exit: {dev}")
         return True
 
@@ -930,21 +1246,30 @@ class Controller(Node):
             )
         # make sure all we know about are added in case they didn't respond this time.
         LOGGER.info(f"kasa.Discover.discover({target}) done: checking for previously known devices")
-        for mac in self.Data:
-            LOGGER.debug(f'checking mac={mac}')
-            if self.smac(mac) in self.devm:
-                LOGGER.debug(f'already added mac={mac}')
+        for key in self.Data:
+            LOGGER.debug(f'checking saved cfg key={key}')
+            cfg = self.get_device_cfg(key)
+            if cfg is None:
+                continue
+            identity = self._node_identity_key(cfg=cfg)
+            if identity is not None and (
+                identity in self.devm or self.nodes_by_mac.get(identity) is not None
+            ):
+                LOGGER.debug(f'already added identity={identity}')
+                continue
+            LOGGER.debug(f'cfg={cfg}')
+            # If it's not in the DB, the user deleted it, so don't add it back.
+            cname = self.poly.getNodeNameFromDb(cfg['address'])
+            if cname is None:
+                LOGGER.warning(
+                    "NOT adding previously known device that didn't respond to "
+                    f"discover because it was deleted from PG3: {cfg}"
+                )
             else:
-                cfg = self.get_device_cfg(mac)
-                LOGGER.debug(f'cfg={cfg}')
-                if cfg is not None:
-                    # If it's not not in the DB, then user deleted it, so don't add it back.
-                    cname = self.poly.getNodeNameFromDb(cfg['address'])
-                    if cname is None:                    
-                        LOGGER.warning(f"NOT adding previously known device that didn't respond to discover because it was deleted from PG3: {cfg}")
-                    else:
-                        LOGGER.warning(f"Adding previously known device that didn't respond to discover: {cfg}")
-                        self.add_device_node(cfg=cfg)
+                LOGGER.warning(
+                    f"Adding previously known device that didn't respond to discover: {cfg}"
+                )
+                self.add_device_node(cfg=cfg)
         LOGGER.debug('exit')
         #return True
 
@@ -963,27 +1288,44 @@ class Controller(Node):
             if self.is_unsupported_discovered_type(dev) and smac not in self.nodes_by_mac:
                 self.log_unsupported_discovered_type(dev)
                 return False
-            # Known Device?
+            existing = self._existing_node_for_dev(dev)
+            if existing is not None:
+                # Do not authenticate/update the ephemeral discovery Device
+                # when we already have a long-lived node for this identity.
+                # Parallel discover probes were re-setting host auth notices
+                # and racing the node's own poll session.
+                LOGGER.debug(
+                    f'known device {dev.host} -> existing node {existing.name}'
+                )
+                if dev.host != existing.host:
+                    LOGGER.warning(
+                        f"Updating '{existing.name}' host from {existing.host} to {dev.host}"
+                    )
+                    existing.host = dev.host
+                    if getattr(existing, 'cfg', None) is not None:
+                        existing.cfg['host'] = dev.host
+                if not existing.is_connected():
+                    LOGGER.info(
+                        f"Reconnecting known node '{existing.name}' on {dev.host}"
+                    )
+                    await existing.connect_a()
+                return
             if not await self.update_dev(dev):
                 return False
             LOGGER.debug(f'mac={smac} dev={dev}')
             if smac in self.nodes_by_mac:
                 node = self.nodes_by_mac[smac]
-                # Make sure the host matches
                 if dev.host != node.host:
-                    LOGGER.warning(f"Updating '{node.name}' host from {node.host} to {dev.host}")
+                    LOGGER.warning(
+                        f"Updating '{node.name}' host from {node.host} to {dev.host}"
+                    )
                     node.host = dev.host
                     await node.connect_a()
-                else:
-                    LOGGER.info(f"Connected:{node.is_connected()} '{node.name}'")
-                    if not node.is_connected():
-                        # Previously connected node
-                        LOGGER.warning(f"Connected:{node.is_connected()} '{node.name}' host is {node.host} same as {dev.host}")
-                        await node.connect_a()
-                # The freshly-discovered Device duplicates node.dev for
-                # an already-known host; node.dev is what get polled and
-                # reused, so this discovery's Device is unused and must
-                # be disconnected (handled in the finally block).
+                elif not node.is_connected():
+                    LOGGER.warning(
+                        f"Reconnecting '{node.name}' on {node.host}"
+                    )
+                    await node.connect_a()
             else:
                 LOGGER.warning(f'Found a new device {dev.mac}, adding {dev.alias}')
                 added = self.add_device_node(dev=dev)
@@ -1085,11 +1427,12 @@ class Controller(Node):
         if dev is not None:
             mac  = dev.mac
             type = str(dev.device_type)
-            if hasattr(dev,'alias'):
+            if type == 'DeviceType.Strip' or dev.is_strip:
+                # Parent strip alias can mirror an outlet name on HS300.
+                model = getattr(dev, 'model', None) or 'Strip'
+                name = get_valid_node_name(f'SmartStrip {model}')
+            elif hasattr(dev,'alias'):
                 name = dev.alias 
-            elif dev.is_strip:
-                # SmartStrip doesn't have an alias so use the mac
-                name = get_valid_node_name(f'SmartStrip {mac}')
             else:
                 LOGGER.error(f"What is this device with no alias? {dev}")
                 return False
@@ -1192,19 +1535,42 @@ class Controller(Node):
     def exist_device_param(self,mac):
         return True if self.smac(mac) in self.Data else False
 
-    def save_cfg(self,cfg):
-        mac = self.smac(cfg['mac'])
-        LOGGER.debug(f'Saving config for mac: {mac}: {cfg}')
-        self.Data[mac] = json.dumps(cfg)
+    def _cfg_storage_key(self, cfg):
+        """Stable customdata key for a saved device cfg.
 
-    def get_device_cfg(self,mac):
-        return(self.cfg_to_dict(self.Data[self.smac(mac)]))
+        Strip sockets share the parent MAC in cfg['mac']; store each child
+        under its unique device_id or IoX address so configs do not overwrite
+        each other (and so rediscover can reload every outlet).
+        """
+        device_id = cfg.get('device_id')
+        if cfg.get('type') in ('SmartStripPlug', 'DeviceType.StripSocket') and device_id:
+            return self.smac(device_id)
+        if cfg.get('address'):
+            return cfg['address']
+        return self.smac(cfg['mac'])
+
+    def save_cfg(self,cfg):
+        key = self._cfg_storage_key(cfg)
+        LOGGER.debug(f'Saving config key={key}: {cfg}')
+        self.Data[key] = json.dumps(cfg)
+
+    def get_device_cfg(self,key):
+        raw = self.Data.get(key)
+        if raw is None:
+            raw = self.Data.get(self.smac(key))
+        if raw is None:
+            return None
+        return self.cfg_to_dict(raw)
  
     def cfg_to_dict(self,cfg):
+        if isinstance(cfg, dict):
+            return cfg
         try:
             cfgd = json.loads(cfg)
         except (json.JSONDecodeError, TypeError) as err:
             LOGGER.error('failed to parse cfg=%r Error: %s', cfg, err)
+            return None
+        if not isinstance(cfgd, dict):
             return None
         return cfgd
 
