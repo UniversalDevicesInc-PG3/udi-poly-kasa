@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+## [3.3.12] - 2026-06-21
+
+### Fixed
+
+- **Restart flood overwhelming PG3:** restored Ecobee-style serialized `addNode` via `ADDNODEDONE`/`wait_for_node_done`, and deferred per-node startup connects into a controller drain queue so restart no longer fires parallel connect/setDriver bursts that overflow PG3's MQTT Bottleneck queue.
+- **Auth/update notices showed `None` instead of device name:** device notices and auth error logs now resolve a friendly label from the IoX node name or saved cfg when `dev.alias` is unavailable (common on SMART/Tapo authentication failures before the device fully responds).
+
+## [3.3.11] - 2026-06-17
+
+### Fixed
+
+- **`change_node_names` on reconnect:** when `change_node_names=true`, IoX node names now sync from the live Kasa alias after every successful device update, not only when a node is first added. HS300 strip outlet names sync from each child device's alias when the parent strip updates or reconnects.
+
 ## [3.3.10] - 2026-06-18
 
 ### Fixed

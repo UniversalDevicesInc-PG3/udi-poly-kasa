@@ -54,8 +54,8 @@ The node server does not require that you reserve IP addresses for the devices, 
 
 #### change_node_names
 
-This defaults to false, changing to true will change node names to match what is configured in Kasa app on restart or long poll.
-Note: there is currently a bug in PG3 so renames during long poll are not working, you must restart the node server.
+This defaults to false. When set to true, IoX node names are changed to match the Kasa app alias on first add and after each successful device update (short poll, long poll, and reconnect). HS300 outlet names sync when the parent strip updates.
+Note: there is currently a bug in PG3 so renames during long poll may not persist until the node server is restarted.
 
 ## Kasa Devices
 

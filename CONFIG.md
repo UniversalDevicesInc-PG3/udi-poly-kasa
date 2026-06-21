@@ -25,7 +25,7 @@ Your Kasa User Password
 
 #### `change_node_names`
 
-If set to true the IoX node nodes are changed to match the Kasa device names when the node server is restarted.
+If set to true, IoX node names are changed to match the Kasa device alias when the node is first added and after each successful device update. HS300 outlet names sync from each child device's alias when the parent strip updates or reconnects.
 
 #### `auto_discover`
 

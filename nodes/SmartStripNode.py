@@ -48,6 +48,9 @@ class SmartStripNode(SmartDeviceNode):
         if (data['address'] != self.address):
             return
         LOGGER.debug(f'{self.pfx} enter: data={data} address={self.address}')
+        if self.controller.startup_in_progress:
+            LOGGER.debug(f'{self.pfx} add_node_done deferred during startup')
+            return
         if self.is_connected():
             self.update()
             self.add_children()
@@ -93,6 +96,7 @@ class SmartStripNode(SmartDeviceNode):
             if set_energy:
                 await self._set_energy_a()
             # We dont update children since that forces an update on myself each time
+            self.controller.sync_strip_child_names(self)
             await self.set_children_drivers_a(set_energy=set_energy)
             self.set_st_from_children()
         LOGGER.debug(f'{self.pfx} exit:  dev={self._dev_desc(self.dev)}')
@@ -120,6 +124,7 @@ class SmartStripNode(SmartDeviceNode):
             LOGGER.debug(f'{self.pfx} exit: dev={self._dev_desc(self.dev)}')
             return
         self.add_children()
+        self.controller.sync_strip_child_names(self)
         LOGGER.debug(f'{self.pfx} exit: dev={self._dev_desc(self.dev)}')
 
     def add_children(self):

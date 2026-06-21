@@ -80,6 +80,13 @@ class Controller(Node):
         # multiple unreachable hosts add up to less mainloop blocking before
         # the breaker trips.
         self.discover_single_timeout = 3
+        # Serialize async addNode calls (Ecobee pattern); wait_for_node_done
+        # blocks until ADDNODEDONE fires for the pending add.
+        self.n_queue = []
+        # Defer per-node startup connects until after discover completes.
+        self.startup_connect_queue = []
+        self.startup_in_progress = False
+        self.startup_connect_gap = 0.05
         self.poly.subscribe(self.poly.START,                  self.handler_start, address) 
         self.poly.subscribe(self.poly.POLL,                   self.handler_poll)
         self.poly.subscribe(self.poly.LOGLEVEL,               self.handler_log_level)
@@ -87,12 +94,56 @@ class Controller(Node):
         self.poly.subscribe(self.poly.CUSTOMPARAMS,           self.handler_params)
         self.poly.subscribe(self.poly.CUSTOMDATA,             self.handler_data)
         self.poly.subscribe(self.poly.DISCOVER,               self.discover_new)
+        self.poly.subscribe(self.poly.ADDNODEDONE,            self.handler_add_node_done)
         self.poly.subscribe(poly.CUSTOMTYPEDPARAMS,           self.handler_typed_params)
         self.poly.subscribe(poly.CUSTOMTYPEDDATA,             self.handler_typed_data)
         self.poly.ready()
         self.poly.addNode(self, conn_status='ST')
 
+    def node_queue(self, data):
+        self.n_queue.append(data['address'])
+
+    def wait_for_node_done(self):
+        while len(self.n_queue) == 0:
+            time.sleep(0.1)
+        self.n_queue.pop()
+
+    def handler_add_node_done(self, node):
+        if isinstance(node, dict):
+            addr = node.get('address')
+        else:
+            addr = getattr(node, 'address', None)
+        if addr is not None:
+            self.node_queue({'address': addr})
+
+    def enqueue_startup_connect(self, node):
+        address = getattr(node, 'address', None)
+        if address is None or address == self.address:
+            return
+        if address not in self.startup_connect_queue:
+            self.startup_connect_queue.append(address)
+
+    def drain_startup_connects(self):
+        LOGGER.info('Startup connect queue: %s nodes', len(self.startup_connect_queue))
+        for address in list(self.startup_connect_queue):
+            node = self.poly.getNode(address)
+            if node is None:
+                LOGGER.warning('Startup connect: node not found for %s', address)
+                continue
+            name = getattr(node, 'name', address)
+            LOGGER.debug('Startup connect: %s', name)
+            try:
+                if hasattr(node, 'connect'):
+                    node.connect()
+            except Exception:
+                LOGGER.error('Startup connect failed for %s', address, exc_info=True)
+            if self.startup_connect_gap:
+                time.sleep(self.startup_connect_gap)
+        self.startup_connect_queue.clear()
+        self.startup_in_progress = False
+
     def handler_start(self):
+        self.startup_in_progress = True
         LOGGER.info(f"Started Kasa PG3 NodeServer {self.poly.serverdata['version']}")
         LOGGER.info(f"Kasa Library Version {kasa.__version__}")
         self._install_signal_handlers()
@@ -140,6 +191,11 @@ class Controller(Node):
             self.add_manual_devices()
         except Exception:
             LOGGER.error('add_manual_devices failed', exc_info=True)
+        try:
+            self.drain_startup_connects()
+        except Exception:
+            LOGGER.error('drain_startup_connects failed', exc_info=True)
+            self.startup_in_progress = False
         self.ready = True
         LOGGER.info(f'exit {self.name}')
 
@@ -494,7 +550,12 @@ class Controller(Node):
                 f'Authentication failed: {msg}',
                 source='auth',
             )
-            LOGGER.error(f'Failed to authenticate {dev}: {msg}')
+            LOGGER.error(
+                'Failed to authenticate %s (%s): %s',
+                self._device_display_name(dev),
+                host,
+                msg,
+            )
         except KasaException as ex:
             # KasaException already encodes the actionable bit (e.g. "Host
             # is down", "Timed out") in its message. The traceback is the
@@ -521,11 +582,119 @@ class Controller(Node):
         if ret:
             self.host_record_success(host)
             self.clear_device_notice(dev)
+            if self.change_node_names:
+                identity = self._node_identity_key(dev=dev)
+                node = self.nodes_by_mac.get(identity) if identity else None
+                alias = getattr(dev, 'alias', None)
+                if node is not None and alias:
+                    self.sync_node_name(node, alias)
+                if (
+                    node is not None
+                    and str(getattr(dev, 'device_type', None)) == 'DeviceType.Strip'
+                ):
+                    self.sync_strip_child_names(node)
         return ret
+
+    def sync_node_name(self, node, alias, on_add=False):
+        """Sync an IoX node name from the live Kasa alias when enabled."""
+        if not alias:
+            return
+        requested = get_valid_node_name(alias)
+        address = getattr(node, 'address', None)
+        if address is None and getattr(node, 'cfg', None):
+            address = node.cfg.get('address')
+        if address is None:
+            return
+
+        if self.change_node_names:
+            if not on_add and requested == node.name:
+                return
+            cname = self.poly.getNodeNameFromDb(address)
+            current = cname if cname is not None else node.name
+            if requested == current:
+                if node.name != requested:
+                    node.name = requested
+                return
+            LOGGER.warning(
+                "Node name '%s' for %s does not match Kasa alias '%s', changing to match",
+                current,
+                address,
+                requested,
+            )
+            try:
+                self.poly.renameNode(address, requested)
+            except Exception:
+                LOGGER.error(
+                    'renameNode error, which is a known issue with PG3x Version <= 3.2.7',
+                    exc_info=True,
+                )
+                return
+            node.name = requested
+            if getattr(node, 'cfg', None) is not None:
+                node.cfg['name'] = requested
+                self.save_cfg(node.cfg)
+            return
+
+        if on_add:
+            cname = self.poly.getNodeNameFromDb(address)
+            if cname is not None and node.name != cname:
+                LOGGER.warning(
+                    "Existing node name '%s' for %s does not match requested name '%s', "
+                    "NOT changing to match, set change_node_names=true to enable",
+                    cname,
+                    address,
+                    node.name,
+                )
+                node.name = cname
+
+    def sync_strip_child_names(self, strip_node):
+        """Sync HS300 outlet node names from the parent strip's child devices."""
+        if not self.change_node_names:
+            return
+        dev = getattr(strip_node, 'dev', None)
+        if dev is None or str(getattr(dev, 'device_type', None)) != 'DeviceType.Strip':
+            return
+        children = getattr(dev, 'children', None)
+        if not children:
+            return
+        child_nodes = getattr(strip_node, 'child_nodes', None) or []
+        for pnum, child_dev in enumerate(children):
+            identity = self._node_identity_key(dev=child_dev)
+            plug_node = self.nodes_by_mac.get(identity) if identity else None
+            if plug_node is None and pnum < len(child_nodes):
+                plug_node = child_nodes[pnum]
+            alias = getattr(child_dev, 'alias', None)
+            if plug_node is not None and alias:
+                self.sync_node_name(plug_node, alias)
 
     def _notice_key_for_device(self, dev):
         host = getattr(dev, 'host', 'unknown')
         return f"dev_{host}".replace('.', '_')
+
+    def _device_display_name(self, dev):
+        """Friendly device label for notices/logs when dev.alias is missing."""
+        alias = getattr(dev, 'alias', None)
+        if alias:
+            return alias
+        identity = self._node_identity_key(dev=dev)
+        if identity:
+            node = self.nodes_by_mac.get(identity)
+            if node is not None:
+                name = getattr(node, 'name', None)
+                if name:
+                    return name
+        host = getattr(dev, 'host', None)
+        if host:
+            for node in self.nodes_by_mac.values():
+                if getattr(node, 'host', None) == host:
+                    name = getattr(node, 'name', None)
+                    if name:
+                        return name
+            for mac in self.Data:
+                cfg = self.get_device_cfg(mac)
+                if cfg and cfg.get('host') == host and cfg.get('name'):
+                    return cfg['name']
+        return 'Device'
 
     # Sources ranked by how specific/useful the message is. Higher wins.
     _NOTICE_SOURCE_PRIORITY = {
@@ -553,7 +722,7 @@ class Controller(Node):
         text differences don't cause MQTT/log churn.
         """
         key = self._notice_key_for_device(dev)
-        body = f"{getattr(dev, 'alias', 'Device')} ({getattr(dev, 'host', 'unknown')}): {message}"
+        body = f"{self._device_display_name(dev)} ({getattr(dev, 'host', 'unknown')}): {message}"
         new_priority = self._NOTICE_SOURCE_PRIORITY.get(source, 0)
         try:
             existing = self.poly.Notices[key]
@@ -1007,32 +1176,14 @@ class Controller(Node):
     def add_node(self,address,node):
         LOGGER.debug(f"Adding: {node.name}")
         self.poly.addNode(node)
-        #self.wait_for_node_done()
+        self.wait_for_node_done()
         gnode = self.poly.getNode(address)
         if gnode is None:
             msg = f'Failed to add node address {address}'
             LOGGER.error(msg)
             #self.inc_error(msg)
         else:
-            # See if we need to check for node name changes where Kasa is the source
-            cname = self.poly.getNodeNameFromDb(address)
-            if cname is not None:
-                LOGGER.debug(f"node {address} Requested: '{node.name}' Current: '{cname}'")
-                # Check that the name matches
-                if node.name != cname:
-                    if self.change_node_names:
-                        LOGGER.warning(f"Existing node name '{cname}' for {address} does not match requested name '{node.name}', changing to match")
-                        try:
-                            self.poly.renameNode(address,node.name)
-                        except Exception:
-                            LOGGER.error(
-                                'renameNode error, which is a known issue with PG3x Version <= 3.2.7',
-                                exc_info=True,
-                            )
-                    else:
-                        LOGGER.warning(f"Existing node name '{cname}' for {address} does not match requested name '{node.name}', NOT changing to match, set change_node_names=true to enable")
-                        # Change it to existing name to avoid addNode error
-                        node.name = cname
+            self.sync_node_name(node, node.name, on_add=True)
         return gnode
 
     def smac(self,mac):

@@ -82,8 +82,7 @@ class SmartDeviceNode(Node):
 
     def handler_start(self):
         LOGGER.debug(f'enter: {self.name} dev={self._dev_desc(self.dev)}')
-        res = self.connect()
-        LOGGER.debug(f'result:{res} {self.name} dev={self._dev_desc(self.dev)}')
+        self.controller.enqueue_startup_connect(self)
         self.ready = True
         LOGGER.debug(f'exit: {self.name} dev={self._dev_desc(self.dev)}')
 
