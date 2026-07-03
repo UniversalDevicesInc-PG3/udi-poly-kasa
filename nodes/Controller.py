@@ -87,6 +87,7 @@ class Controller(Node):
         self.startup_connect_queue = []
         self.startup_in_progress = False
         self.startup_connect_gap = 0.05
+        self._strip_cleanup_notified = set()
         self.poly.subscribe(self.poly.START,                  self.handler_start, address) 
         self.poly.subscribe(self.poly.POLL,                   self.handler_poll)
         self.poly.subscribe(self.poly.LOGLEVEL,               self.handler_log_level)
@@ -187,9 +188,9 @@ class Controller(Node):
             LOGGER.error("Timed out waiting for handlers to startup")
             #self.exit()
         try:
-            self.cleanup_corrupt_strip_nodes()
+            self._purge_stale_misnamed_strip_cfg()
         except Exception:
-            LOGGER.error('cleanup_corrupt_strip_nodes failed', exc_info=True)
+            LOGGER.error('_purge_stale_misnamed_strip_cfg failed', exc_info=True)
         # Discover
         try:
             self.discover()
@@ -204,14 +205,12 @@ class Controller(Node):
         except Exception:
             LOGGER.error('drain_startup_connects failed', exc_info=True)
             self.startup_in_progress = False
-        # Nodes and plug ids may not exist yet on the first pass (IoX is
-        # still hydrating child nodes from the DB). Run cleanup again once
-        # startup connects finish so misnamed strips like "Plug 3 Testing"
-        # are removed before normal polling continues.
+        # Outlet child nodes may not exist until IoX finishes hydrating and
+        # startup connects run; delete with PG3 ack waits (homekit-hub pattern).
         try:
             self.cleanup_corrupt_strip_nodes()
         except Exception:
-            LOGGER.error('cleanup_corrupt_strip_nodes failed (post-startup)', exc_info=True)
+            LOGGER.error('cleanup_corrupt_strip_nodes failed', exc_info=True)
         self.ready = True
         LOGGER.info(f'exit {self.name}')
 
@@ -821,21 +820,36 @@ class Controller(Node):
             return False
         return parent == other or parent.startswith(other) or other.startswith(parent)
 
+    def _strip_parent_name_collides_with_outlet(self, host, parent_name):
+        if not host:
+            return False
+        for outlet_name in self._outlet_cfg_names_for_host(host):
+            if self._node_names_collide(parent_name, outlet_name):
+                return True
+        return False
+
     def _collect_corrupt_strip_targets(self):
-        """Return misnamed HS300 strip parents plus their outlet child addresses."""
+        """Return misnamed live HS300 strip parents plus outlet child addresses.
+
+        Destructive cleanup requires a misnamed strip parent in IoX (or the
+        3.3.11 outlet-alias signature with child suffix addresses). Stale
+        misnamed cfg alone is handled by ``_purge_stale_misnamed_strip_cfg``.
+        """
         targets = {}
 
-        def consider(parent_address, host, name):
+        def consider(parent_address, host, name, live_parent=False):
             parent_address = (parent_address or '').lower()
             if not parent_address or not self._is_misnamed_strip_parent_name(name):
                 return
-            child_addrs = self._strip_child_address_pattern(parent_address)
+            child_addrs = self._strip_child_addresses(parent_address)
             if not child_addrs and host:
-                for outlet_name in self._outlet_cfg_names_for_host(host):
-                    if self._node_names_collide(name, outlet_name):
-                        child_addrs = self._strip_child_address_pattern(parent_address)
-                        break
+                if self._strip_parent_name_collides_with_outlet(host, name):
+                    child_addrs = self._strip_child_address_pattern(parent_address)
             if not child_addrs:
+                return
+            if not live_parent and not self._strip_parent_name_collides_with_outlet(
+                host, name
+            ):
                 return
             targets[parent_address] = {
                 'parent_address': parent_address,
@@ -843,15 +857,6 @@ class Controller(Node):
                 'name': (name or '').strip() or parent_address,
                 'child_addrs': child_addrs,
             }
-
-        for key in list(self.Data):
-            cfg = self.get_device_cfg(key)
-            if cfg is None or not self._is_strip_parent_cfg(cfg):
-                continue
-            parent_address = self._strip_parent_address_from_cfg(cfg)
-            if parent_address is None:
-                continue
-            consider(parent_address, cfg.get('host'), cfg.get('name'))
 
         for address in list(self.poly.getNodes()):
             node = self.poly.getNode(address)
@@ -864,9 +869,39 @@ class Controller(Node):
             if not name and cfg:
                 name = (cfg.get('name') or '').strip()
             host = getattr(node, 'host', None) or (cfg or {}).get('host')
-            consider(address, host, name)
+            consider(address, host, name, live_parent=True)
 
         return list(targets.values())
+
+    def _purge_stale_misnamed_strip_cfg(self):
+        """Drop misnamed strip-parent cfg when IoX already has a healthy parent."""
+        for key in list(self.Data):
+            cfg = self.get_device_cfg(key)
+            if cfg is None or not self._is_strip_parent_cfg(cfg):
+                continue
+            if not self._is_misnamed_strip_parent_name(cfg.get('name')):
+                continue
+            parent_address = self._strip_parent_address_from_cfg(cfg)
+            if parent_address is None:
+                continue
+            node = self.poly.getNode(parent_address)
+            if node is not None and self._node_is_strip_parent(node):
+                node_name = (getattr(node, 'name', '') or '').strip()
+                if not self._is_misnamed_strip_parent_name(node_name):
+                    LOGGER.info(
+                        'Purging stale misnamed strip parent cfg for %s '
+                        "(IoX name is '%s')",
+                        parent_address,
+                        node_name,
+                    )
+                    self.delete_cfg(cfg)
+                    continue
+            if node is None and self._pg3_node_meta(parent_address) is None:
+                LOGGER.info(
+                    'Purging orphan misnamed strip parent cfg for %s',
+                    parent_address,
+                )
+                self.delete_cfg(cfg)
 
     def _is_corrupt_strip_parent(self, strip_node):
         """Detect HS300 parent strips renamed to an outlet alias (3.3.11 bug).
@@ -916,8 +951,35 @@ class Controller(Node):
             except KeyError:
                 pass
 
-    def remove_device_node(self, address):
+    def _pg3_node_meta(self, addr):
+        addr = str(addr or '').strip()
+        if not addr or not hasattr(self.poly, 'getNodesFromDb'):
+            return None
+        try:
+            rows = self.poly.getNodesFromDb([addr])
+            if isinstance(rows, list) and rows and isinstance(rows[0], dict):
+                return rows[0]
+        except Exception:
+            LOGGER.debug('PG3 node meta lookup failed for %s', addr, exc_info=True)
+        return None
+
+    def _wait_for_pg3_node_gone(self, addr, timeout_sec=5.0):
+        """Best-effort wait until PG3 no longer lists *addr* after removenode."""
+        addr = str(addr or '').strip()
+        if not addr:
+            return True
+        deadline = time.time() + max(0.1, float(timeout_sec))
+        while time.time() < deadline:
+            if self._pg3_node_meta(addr) is None:
+                return True
+            time.sleep(0.05)
+        return self._pg3_node_meta(addr) is None
+
+    def remove_device_node(self, address, wait_for_pg3=False):
         """Remove a node from IoX and drop its saved cfg/identity maps."""
+        address = str(address or '').strip()
+        if not address:
+            return False
         node = self.poly.getNode(address)
         if node is None:
             cfg = self.get_device_cfg(address)
@@ -932,11 +994,14 @@ class Controller(Node):
                 self.poly.delNode(address)
             except Exception:
                 LOGGER.debug('delNode skipped for missing IoX node %s', address)
+                return False
             if host:
                 try:
                     self.poly.Notices.delete(f"dev_{host}".replace('.', '_'))
                 except KeyError:
                     pass
+            if wait_for_pg3:
+                return self._wait_for_pg3_node_gone(address)
             return True
         cfg = getattr(node, 'cfg', None) or self.get_device_cfg(address)
         host = getattr(node, 'host', None)
@@ -944,19 +1009,69 @@ class Controller(Node):
         LOGGER.warning('Removing node %s (%s)', name, address)
         self.delete_cfg(cfg)
         self._forget_node_identity(node)
-        self.poly.delNode(address)
+        try:
+            self.poly.delNode(address)
+        except Exception:
+            LOGGER.error('delNode failed for %s', address, exc_info=True)
+            return False
         if host:
             try:
                 self.poly.Notices.delete(f"dev_{host}".replace('.', '_'))
             except KeyError:
                 pass
+        if wait_for_pg3:
+            return self._wait_for_pg3_node_gone(address)
+        return True
+
+    def _delete_strip_for_recreation(
+        self, parent_address, child_addrs, *, reason='corrupt strip cleanup'
+    ):
+        """Delete outlet children first, then parent, waiting for PG3 each step."""
+        parent_address = str(parent_address or '').strip().lower()
+        label = reason or 'corrupt strip cleanup'
+        if not parent_address:
+            return False
+        for child_addr in sorted(child_addrs, reverse=True):
+            if not self.remove_device_node(child_addr, wait_for_pg3=True):
+                LOGGER.warning(
+                    'Strip child %s still in PG3 after delete (%s)',
+                    child_addr,
+                    label,
+                )
+                return False
+            if self.startup_connect_gap:
+                time.sleep(self.startup_connect_gap)
+        if not self.remove_device_node(parent_address, wait_for_pg3=True):
+            LOGGER.warning(
+                'Strip parent %s still in PG3 after delete (%s)',
+                parent_address,
+                label,
+            )
+            return False
+        for child_addr in child_addrs:
+            if self._pg3_node_meta(child_addr) is not None:
+                LOGGER.warning(
+                    'Strip child %s still in PG3 after parent delete (%s)',
+                    child_addr,
+                    label,
+                )
+                return False
+        if self._pg3_node_meta(parent_address) is not None:
+            LOGGER.warning(
+                'Strip parent %s still in PG3 after delete (%s)',
+                parent_address,
+                label,
+            )
+            return False
         return True
 
     def cleanup_corrupt_strip_nodes(self):
         """Delete misnamed strip parents and their outlet children.
 
-        PG3 requires children be removed before the parent. Discover will
-        recreate the strip tree with ``SmartStrip {model}`` naming afterward.
+        PG3 requires children be removed before the parent. Each ``delNode`` is
+        followed by a PG3 ack wait (udi-poly-homekit-hub thermostat pattern).
+        Discover will recreate the strip tree with ``SmartStrip {model}``
+        naming afterward.
         """
         corrupt = self._collect_corrupt_strip_targets()
         if not corrupt:
@@ -973,10 +1088,19 @@ class Controller(Node):
                 parent_address,
                 len(child_addrs),
             )
-            for child_addr in child_addrs:
-                self.remove_device_node(child_addr)
-            self.remove_device_node(parent_address)
-            self.set_strip_cleanup_notice(host, strip_name, len(child_addrs))
+            if self._delete_strip_for_recreation(
+                parent_address,
+                child_addrs,
+                reason='corrupt HS300 strip cleanup',
+            ):
+                self.set_strip_cleanup_notice(host, strip_name, len(child_addrs))
+            else:
+                LOGGER.warning(
+                    "Corrupt HS300 strip '%s' (%s): cleanup incomplete; "
+                    'will retry on next restart',
+                    strip_name,
+                    parent_address,
+                )
 
     def _strip_cleanup_notice_key(self, host):
         return f"strip_cleanup_{host}".replace('.', '_')
@@ -984,6 +1108,8 @@ class Controller(Node):
     def set_strip_cleanup_notice(self, host, strip_name, child_count):
         """Post a session-only IoX notice after corrupt strip cleanup."""
         if not host:
+            return
+        if host in self._strip_cleanup_notified:
             return
         name = (strip_name or '').strip() or host
         timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
@@ -994,6 +1120,7 @@ class Controller(Node):
         )
         key = self._strip_cleanup_notice_key(host)
         self.Notices[key] = f"[{timestamp}] [cleanup] {body}"
+        self._strip_cleanup_notified.add(host)
         LOGGER.warning(
             "Posted strip cleanup notice for %s (%s), %s outlet(s) removed",
             name,
@@ -1452,7 +1579,12 @@ class Controller(Node):
             if type == 'DeviceType.StripSocket':
                 cfg['device_id'] = getattr(dev, 'device_id', None)
         elif cfg is not None:
-            name = cfg['name']
+            if self._is_strip_parent_cfg(cfg):
+                model = cfg.get('model') or 'Strip'
+                name = get_valid_node_name(f'SmartStrip {model}')
+                cfg['name'] = name
+            else:
+                name = cfg['name']
         else:
             LOGGER.error(f"INTERNAL ERROR: dev={dev} and cfg={cfg}")
             return False

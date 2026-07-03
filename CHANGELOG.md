@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.3.14] - 2026-07-03
+
+### Fixed
+
+- **Repeated HS300 strip cleanup notice:** corrupt strip removal now waits for PG3/IoX to finish each outlet `delNode` before deleting the parent (same pattern as udi-poly-homekit-hub thermostat recreation), posts the cleanup notice only after parent and children are confirmed gone, dedupes the notice per host per session, purges stale misnamed strip-parent cfg without deleting healthy `SmartStrip` trees, requires a live misnamed strip parent (or outlet-alias signature) before destructive cleanup, normalizes strip parent names when re-adding from saved cfg, and runs a single cleanup pass after startup connects.
+
 ## [3.3.13] - 2026-06-21
 
 ### Fixed
