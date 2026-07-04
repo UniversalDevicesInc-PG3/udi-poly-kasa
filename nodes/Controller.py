@@ -87,7 +87,15 @@ class Controller(Node):
         self.startup_connect_queue = []
         self.startup_in_progress = False
         self.startup_connect_gap = 0.05
+        # Minimum pause after each addNode ACK so PG3 is not flooded on restart.
+        self.add_node_gap = 0.2
+        self.add_node_timeout = 30.0
         self._strip_cleanup_notified = set()
+        # Devices discovered on the asyncio thread; drained serially on the
+        # caller thread so wait_for_node_done does not block the mainloop.
+        self._pending_device_adds = []
+        # Safe default until handler_params loads real credentials.
+        self.credentials = kasa.Credentials('none', 'none')
         self.poly.subscribe(self.poly.START,                  self.handler_start, address) 
         self.poly.subscribe(self.poly.POLL,                   self.handler_poll)
         self.poly.subscribe(self.poly.LOGLEVEL,               self.handler_log_level)
@@ -102,12 +110,32 @@ class Controller(Node):
         self.poly.addNode(self, conn_status='ST')
 
     def node_queue(self, data):
-        self.n_queue.append(data['address'])
+        addr = data.get('address') if isinstance(data, dict) else data
+        if addr is not None:
+            self.n_queue.append(str(addr).lower())
 
-    def wait_for_node_done(self):
-        while len(self.n_queue) == 0:
-            time.sleep(0.1)
-        self.n_queue.pop()
+    def wait_for_node_done(self, address=None, timeout_sec=None):
+        """Block until ADDNODEDONE for *address* (or any address if None)."""
+        address = str(address or '').lower()
+        if timeout_sec is None:
+            timeout_sec = self.add_node_timeout
+        deadline = time.time() + max(0.1, float(timeout_sec))
+        while time.time() < deadline:
+            if address:
+                for i, queued in enumerate(self.n_queue):
+                    if queued == address:
+                        self.n_queue.pop(i)
+                        return True
+            elif self.n_queue:
+                self.n_queue.pop(0)
+                return True
+            time.sleep(0.05)
+        LOGGER.warning(
+            'wait_for_node_done timed out after %ss for %s',
+            timeout_sec,
+            address or '<any>',
+        )
+        return False
 
     def handler_add_node_done(self, node):
         if isinstance(node, dict):
@@ -145,6 +173,10 @@ class Controller(Node):
 
     def handler_start(self):
         self.startup_in_progress = True
+        # Drop any ADDNODEDONE from the controller addNode so the first
+        # device wait is not satisfied by a stale queue entry.
+        self.n_queue.clear()
+        self._pending_device_adds = []
         LOGGER.info(f"Started Kasa PG3 NodeServer {self.poly.serverdata['version']}")
         LOGGER.info(f"Kasa Library Version {kasa.__version__}")
         self._install_signal_handlers()
@@ -177,16 +209,26 @@ class Controller(Node):
             cfgdoc = markdown2.markdown_path(configurationHelp)
             self.poly.setCustomParamsDoc(cfgdoc)
         #
-        # Wait for all handlers to finish
+        # Wait for all handlers to finish (credentials must be loaded
+        # before discover / discover_single).
         #
         cnt = 600
         while ((self.handler_params_st is None or self.handler_data_st is None or self.handler_typedparams_st is None or self.handler_typeddata_st is None) and cnt > 0):
-            LOGGER.warning(f'Waiting for all to be loaded params={self.handler_params_st} data={self.handler_data_st}... cnt={cnt}')
+            LOGGER.warning(
+                'Waiting for all to be loaded params=%s data=%s typedparams=%s '
+                'typeddata=%s... cnt=%s',
+                self.handler_params_st,
+                self.handler_data_st,
+                self.handler_typedparams_st,
+                self.handler_typeddata_st,
+                cnt,
+            )
             time.sleep(1)
             cnt -= 1
         if cnt == 0:
             LOGGER.error("Timed out waiting for handlers to startup")
             #self.exit()
+        self._ensure_credentials()
         try:
             self._purge_stale_misnamed_strip_cfg()
         except Exception:
@@ -493,53 +535,113 @@ class Controller(Node):
             )
             res = None
         LOGGER.debug(f'result={res}')
+        # Register nodes on this thread (not asyncio) with paced addNode.
+        self.drain_pending_device_adds()
         self.discover_done = True
         LOGGER.info("exit")
 
     async def _add_manual_devices(self):
-        for mdev in self.manual_devices:
-            LOGGER.info(f"Adding manual device {mdev['address']}")
+        for mdev in self.manual_devices or []:
+            host = str((mdev or {}).get('address') or '').strip()
+            if not host:
+                continue
+            LOGGER.info(f"Adding manual device {host}")
             try:
-                dev = await self.discover_single(host=mdev['address'])
+                dev = await self.discover_single(host=host)
                 if dev is None:
                     LOGGER.warning(
-                        f"discover_single returned no device for {mdev['address']}; "
+                        f"discover_single returned no device for {host}; "
                         f"skipping (host likely unreachable or circuit-broken)"
                     )
                     continue
-                self.add_device_node(dev=dev)
+                self.queue_device_add(dev=dev)
             except Exception as ex:
-                LOGGER.error(f"{ex} trying to connect to {mdev['address']}",exc_info=False)
-        
+                LOGGER.error(f"{ex} trying to connect to {host}", exc_info=False)
+
+    def _normalize_broadcast_address(self, address):
+        """Return a UDP broadcast address for kasa discover.
+
+        Extra Discovery Networks must be broadcast (e.g. 192.168.222.255).
+        Operators often enter a gateway (.1) or host IP; map those to .255.
+        """
+        address = str(address or '').strip()
+        if not address:
+            return None
+        parts = address.split('.')
+        if len(parts) == 4 and all(p.isdigit() and 0 <= int(p) <= 255 for p in parts):
+            if parts[3] != '255':
+                broadcast = '.'.join(parts[:3] + ['255'])
+                LOGGER.warning(
+                    'Discovery target %s is not a broadcast address; using %s',
+                    address,
+                    broadcast,
+                )
+                return broadcast
+            return address
+        return address
+
+    def _broadcast_for_host(self, host):
+        host = str(host or '').strip()
+        parts = host.split('.')
+        if len(parts) == 4 and all(p.isdigit() and 0 <= int(p) <= 255 for p in parts):
+            return '.'.join(parts[:3] + ['255'])
+        return None
+
+    def _discover_targets(self):
+        """Ordered unique broadcast targets: interface, manual networks, cfg/manual hosts."""
+        targets = []
+        seen = set()
+
+        def add(addr):
+            broadcast = self._normalize_broadcast_address(addr)
+            if not broadcast or broadcast in seen:
+                return
+            seen.add(broadcast)
+            targets.append(broadcast)
+
+        try:
+            add(self.poly.network_interface.get('broadcast'))
+        except Exception:
+            LOGGER.debug('network_interface broadcast unavailable', exc_info=True)
+
+        for network in self.manual_networks or []:
+            if isinstance(network, dict):
+                add(network.get('address'))
+
+        for mdev in self.manual_devices or []:
+            if isinstance(mdev, dict):
+                add(self._broadcast_for_host(mdev.get('address')))
+
+        for key in list(self.Data):
+            cfg = self.get_device_cfg(key)
+            if cfg and cfg.get('host'):
+                add(self._broadcast_for_host(cfg.get('host')))
+
+        return targets
+
     def discover(self):
         self.devm = {}
-        LOGGER.info(f"enter: {self.poly.network_interface['broadcast']}")
-        future = asyncio.run_coroutine_threadsafe(self._discover(target=self.poly.network_interface['broadcast']), self.mainloop)
-        try:
-            res = future.result(timeout=self.discover_future_timeout)
-        except FutureTimeoutError:
-            LOGGER.error(
-                '_discover timed out after %ss', self.discover_future_timeout, exc_info=True
+        self._pending_device_adds = []
+        targets = self._discover_targets()
+        LOGGER.info('enter: targets=%s', targets)
+        for target in targets:
+            LOGGER.info('calling: _discover(target=%s)', target)
+            future = asyncio.run_coroutine_threadsafe(
+                self._discover(target=target), self.mainloop
             )
-            res = None
-        LOGGER.debug(f'result={res}')
-        if self.manual_networks is None or len(self.manual_networks) == 0:
-            LOGGER.info("No manual networks configured")
-        else:
-            for network in self.manual_networks:
-                LOGGER.info(f"calling: _discover(target={network['address']})")
-                future = asyncio.run_coroutine_threadsafe(self._discover(target=network['address']), self.mainloop)
-                try:
-                    res = future.result(timeout=self.discover_future_timeout)
-                except FutureTimeoutError:
-                    LOGGER.error(
-                        '_discover(%s) timed out after %ss',
-                        network['address'],
-                        self.discover_future_timeout,
-                        exc_info=True,
-                    )
-                    res = None
-                LOGGER.debug(f'result={res}')
+            try:
+                res = future.result(timeout=self.discover_future_timeout)
+            except FutureTimeoutError:
+                LOGGER.error(
+                    '_discover(%s) timed out after %ss',
+                    target,
+                    self.discover_future_timeout,
+                    exc_info=True,
+                )
+                res = None
+            LOGGER.debug('result=%s', res)
+        # addNode on this thread with pacing; always register even if in PG3 DB.
+        self.drain_pending_device_adds()
         self.discover_done = True
         LOGGER.info("exit")
 
@@ -828,28 +930,45 @@ class Controller(Node):
                 return True
         return False
 
-    def _collect_corrupt_strip_targets(self):
-        """Return misnamed live HS300 strip parents plus outlet child addresses.
+    def _strip_parent_name_collides_with_live_children(self, parent_address, parent_name):
+        for addr in self._strip_child_address_pattern(parent_address):
+            node = self.poly.getNode(addr)
+            if node is None:
+                continue
+            child_name = (getattr(node, 'name', '') or '').strip()
+            if self._node_names_collide(parent_name, child_name):
+                return True
+        return False
 
-        Destructive cleanup requires a misnamed strip parent in IoX (or the
-        3.3.11 outlet-alias signature with child suffix addresses). Stale
+    def _strip_parent_has_outlet_alias(self, parent_address, host, parent_name):
+        """True when parent name matches an outlet (3.3.11 corruption signature)."""
+        return (
+            self._strip_parent_name_collides_with_outlet(host, parent_name)
+            or self._strip_parent_name_collides_with_live_children(
+                parent_address, parent_name
+            )
+        )
+
+    def _collect_corrupt_strip_targets(self):
+        """Return corrupt live HS300 strip parents plus outlet child addresses.
+
+        Only the 3.3.11 signature is destructive: parent name matches an outlet
+        alias (not merely "does not start with SmartStrip"). User-renamed
+        parents like ``Living Room | Behind Couch`` are left alone. Stale
         misnamed cfg alone is handled by ``_purge_stale_misnamed_strip_cfg``.
         """
         targets = {}
 
-        def consider(parent_address, host, name, live_parent=False):
+        def consider(parent_address, host, name):
             parent_address = (parent_address or '').lower()
             if not parent_address or not self._is_misnamed_strip_parent_name(name):
                 return
-            child_addrs = self._strip_child_addresses(parent_address)
-            if not child_addrs and host:
-                if self._strip_parent_name_collides_with_outlet(host, name):
-                    child_addrs = self._strip_child_address_pattern(parent_address)
-            if not child_addrs:
+            if not self._strip_parent_has_outlet_alias(parent_address, host, name):
                 return
-            if not live_parent and not self._strip_parent_name_collides_with_outlet(
-                host, name
-            ):
+            child_addrs = self._strip_child_addresses(parent_address)
+            if not child_addrs:
+                child_addrs = self._strip_child_address_pattern(parent_address)
+            if not child_addrs:
                 return
             targets[parent_address] = {
                 'parent_address': parent_address,
@@ -869,7 +988,7 @@ class Controller(Node):
             if not name and cfg:
                 name = (cfg.get('name') or '').strip()
             host = getattr(node, 'host', None) or (cfg or {}).get('host')
-            consider(address, host, name, live_parent=True)
+            consider(address, host, name)
 
         return list(targets.values())
 
@@ -906,9 +1025,9 @@ class Controller(Node):
     def _is_corrupt_strip_parent(self, strip_node):
         """Detect HS300 parent strips renamed to an outlet alias (3.3.11 bug).
 
-        A healthy strip parent is named ``SmartStrip {model}``. A corrupt one
-        was renamed to an outlet label like ``Plug 3 Testing`` while its
-        SmartStripPlug children remain under ``{parent}01``..``{parent}06``.
+        A healthy strip parent is named ``SmartStrip {model}`` or a user label.
+        A corrupt one was renamed to an outlet label like ``Plug 3 Testing``
+        while SmartStripPlug children remain under ``{parent}01``..``{parent}06``.
         """
         cfg = getattr(strip_node, 'cfg', None)
         if not self._node_is_strip_parent(strip_node, cfg):
@@ -921,7 +1040,10 @@ class Controller(Node):
         parent_address = getattr(strip_node, 'address', None)
         if parent_address is None:
             return False
-        return bool(self._strip_child_address_pattern(parent_address))
+        if not self._strip_child_address_pattern(parent_address):
+            return False
+        host = getattr(strip_node, 'host', None) or (cfg or {}).get('host')
+        return self._strip_parent_has_outlet_alias(parent_address, host, parent_name)
 
     def _forget_node_identity(self, node):
         if node is None:
@@ -1354,8 +1476,8 @@ class Controller(Node):
         LOGGER.info(f"Got Device\n\tAlias:{dev.alias}\n\tModel:{dev.model}\n\tMac:{dev.mac}\n\tHost:{dev.host}")
         if not await self.update_dev(dev):
             return False
-        self.add_device_node(dev=dev)
-        # Add to our list of added devices
+        # Queue for paced addNode on the caller thread (do not block asyncio).
+        self.queue_device_add(dev=dev)
         identity = self._node_identity_key(dev=dev)
         if identity is not None:
             self.devm[identity] = True
@@ -1365,7 +1487,7 @@ class Controller(Node):
     async def _discover(self,target):
         LOGGER.debug(f'enter: target={target}')
         await kasa.Discover.discover(
-            credentials=self.credentials,
+            credentials=self._kasa_credentials(),
             timeout=self.discover_timeout,
             discovery_packets=10,
             target=target,
@@ -1379,8 +1501,9 @@ class Controller(Node):
             if cfg is None:
                 continue
             identity = self._node_identity_key(cfg=cfg)
+            # Session-only: skip if we already queued/added this identity.
             if identity is not None and (
-                identity in self.devm or self.nodes_by_mac.get(identity) is not None
+                identity in self.devm or self._session_has_device(cfg=cfg)
             ):
                 LOGGER.debug(f'already added identity={identity}')
                 continue
@@ -1393,10 +1516,14 @@ class Controller(Node):
                     f"discover because it was deleted from PG3: {cfg}"
                 )
             else:
+                # Still must addNode on restart to register the Python node,
+                # even when the row already exists in the PG3 DB.
                 LOGGER.warning(
                     f"Adding previously known device that didn't respond to discover: {cfg}"
                 )
-                self.add_device_node(cfg=cfg)
+                self.queue_device_add(cfg=cfg)
+                if identity is not None:
+                    self.devm[identity] = True
         LOGGER.debug('exit')
         #return True
 
@@ -1455,22 +1582,21 @@ class Controller(Node):
                     await node.connect_a()
             else:
                 LOGGER.warning(f'Found a new device {dev.mac}, adding {dev.alias}')
-                added = self.add_device_node(dev=dev)
-                # add_device_node returns the existing node when an
-                # idempotency-guard match wins (rare cross-thread race),
-                # in which case our `dev` was not retained. Only treat
-                # the device as kept when a brand-new node was created
-                # whose self.dev is exactly our object.
-                if added is not None and getattr(added, 'dev', None) is dev:
-                    keep_dev = True
+                # Queue for paced addNode on the caller thread; keep the
+                # live Device so the new node can adopt it.
+                self.queue_device_add(dev=dev)
+                keep_dev = True
         except Exception as ex:
             LOGGER.error(f'{ex} {dev}',exc_info=True)
         finally:
             if not keep_dev:
                 await self._close_device_quietly(dev)
-            
+
     async def discover_single(self, host=None):
+        host = str(host or '').strip()
         LOGGER.debug(f'enter: host={host}')
+        if not host:
+            return None
         if self.host_should_skip(host):
             s = self._host_state.get(host, {})
             remaining = max(0, int(s.get('next_try', 0.0) - time.monotonic()))
@@ -1482,7 +1608,7 @@ class Controller(Node):
         try:
             dev = await kasa.Discover.discover_single(
                 host,
-                credentials=self.credentials,
+                credentials=self._kasa_credentials(),
                 discovery_timeout=self.discover_single_timeout,
             )
         except Exception:
@@ -1495,27 +1621,38 @@ class Controller(Node):
         LOGGER.debug(f'exit: dev={dev}')
         return dev
 
-
     def discover_new(self):
         LOGGER.info('enter')
         if not self.ready:
             LOGGER.error("Node is not yet ready")
             return False
-        future = asyncio.run_coroutine_threadsafe(self._discover_new_a(), self.mainloop)
-        try:
-            res = future.result(timeout=self.discover_future_timeout)
-        except FutureTimeoutError:
-            LOGGER.error(
-                '_discover_new_a timed out after %ss', self.discover_future_timeout, exc_info=True
+        self._pending_device_adds = []
+        targets = self._discover_targets()
+        for target in targets:
+            LOGGER.info('discover_new target=%s', target)
+            future = asyncio.run_coroutine_threadsafe(
+                self._discover_new_a(target=target), self.mainloop
             )
-            res = None
-        LOGGER.debug(f'result={res}')
+            try:
+                res = future.result(timeout=self.discover_future_timeout)
+            except FutureTimeoutError:
+                LOGGER.error(
+                    '_discover_new_a(%s) timed out after %ss',
+                    target,
+                    self.discover_future_timeout,
+                    exc_info=True,
+                )
+                res = None
+            LOGGER.debug(f'result={res}')
+        self.drain_pending_device_adds()
         LOGGER.info("exit")
 
-    async def _discover_new_a(self):
+    async def _discover_new_a(self, target=None):
+        if target is None:
+            target = self.poly.network_interface['broadcast']
         await kasa.Discover.discover(
-            credentials=self.credentials,
-            target=self.poly.network_interface['broadcast'],
+            credentials=self._kasa_credentials(),
+            target=target,
             on_discovered=self.discover_new_add_device
             )
 
@@ -1588,23 +1725,14 @@ class Controller(Node):
         else:
             LOGGER.error(f"INTERNAL ERROR: dev={dev} and cfg={cfg}")
             return False
-        # Idempotency guard (issue #25). handler_typed_data() re-fires every
-        # time PG3 saves customdata, so each addNode triggers another
-        # add_manual_devices() pass on the same hosts. Without this guard,
-        # add_device_node would re-add the same node on every cycle, flooding
-        # the log and causing the IoX UI to lock up. Look up by mac first
-        # (canonical identity) and fall back to address (in case the node was
-        # added before nodes_by_mac was populated, e.g. from getNodesFromDb on
-        # restart).
-        mac_key = self._node_identity_key(dev=dev, cfg=cfg)
-        existing = self.nodes_by_mac.get(mac_key) if mac_key else None
-        if existing is None:
-            existing = self.poly.getNode(cfg['address'])
-        if existing is not None:
-            if mac_key is not None:
-                self.nodes_by_mac[mac_key] = existing
+        # Session-only idempotency (issue #25 / rediscover). On restart we
+        # always call addNode so PG3 registers the Python node even when the
+        # row already exists in the DB. Within one process, track what we
+        # already added so rediscover does not addNode again.
+        if self._session_has_device(dev=dev, cfg=cfg):
+            existing = self._session_node(dev=dev, cfg=cfg)
             LOGGER.debug(
-                f"Device already added type={cfg['type']} "
+                f"Device already added this session type={cfg['type']} "
                 f"address={cfg['address']} name='{cfg['name']}'"
             )
             return existing
@@ -1642,16 +1770,65 @@ class Controller(Node):
         if node is None:
             LOGGER.error(f"Unable to retrieve node address {cfg['address']} for {type} returned {node}")
         else:
-            identity_key = self._node_identity_key(dev=dev, cfg=cfg)
-            if identity_key is not None:
-                self.nodes_by_mac[identity_key] = node
+            self._remember_session_node(node, dev=dev, cfg=cfg)
         LOGGER.debug(f'exit: dev={dev}')
         return node
 
-    def add_node(self,address,node):
+    def queue_device_add(self, **kwargs):
+        """Queue a device for paced addNode on the caller thread."""
+        self._pending_device_adds.append(kwargs)
+
+    def drain_pending_device_adds(self):
+        """Serially addNode pending devices with PG3 ACK waits."""
+        pending = self._pending_device_adds
+        self._pending_device_adds = []
+        LOGGER.info('Draining %s pending device add(s)', len(pending))
+        for item in pending:
+            try:
+                self.add_device_node(**item)
+            except Exception:
+                LOGGER.error('pending device add failed: %r', item, exc_info=True)
+
+    def _session_address_key(self, address):
+        address = str(address or '').strip().lower()
+        if not address:
+            return None
+        return f"address_{address}"
+
+    def _session_has_device(self, dev=None, cfg=None):
+        return self._session_node(dev=dev, cfg=cfg) is not None
+
+    def _session_node(self, dev=None, cfg=None):
+        identity = self._node_identity_key(dev=dev, cfg=cfg)
+        if identity and identity in self.nodes_by_mac:
+            return self.nodes_by_mac[identity]
+        address = None
+        if cfg is not None:
+            address = cfg.get('address')
+        if address is None and dev is not None and getattr(dev, 'mac', None):
+            address = get_valid_node_address(dev.mac)
+        addr_key = self._session_address_key(address)
+        if addr_key and addr_key in self.nodes_by_mac:
+            return self.nodes_by_mac[addr_key]
+        return None
+
+    def _remember_session_node(self, node, dev=None, cfg=None):
+        if node is None:
+            return
+        identity = self._node_identity_key(dev=dev, cfg=cfg)
+        if identity is not None:
+            self.nodes_by_mac[identity] = node
+        address = getattr(node, 'address', None) or (cfg or {}).get('address')
+        addr_key = self._session_address_key(address)
+        if addr_key is not None:
+            self.nodes_by_mac[addr_key] = node
+
+    def add_node(self, address, node):
         LOGGER.debug(f"Adding: {node.name}")
         self.poly.addNode(node)
-        self.wait_for_node_done()
+        self.wait_for_node_done(address)
+        if self.add_node_gap:
+            time.sleep(self.add_node_gap)
         gnode = self.poly.getNode(address)
         if gnode is None:
             msg = f'Failed to add node address {address}'
@@ -1660,6 +1837,23 @@ class Controller(Node):
         else:
             self.sync_node_name(node, node.name, on_add=True)
         return gnode
+
+    def _ensure_credentials(self):
+        """Ensure self.credentials is a usable kasa.Credentials instance."""
+        if self.credentials is None:
+            self.credentials = kasa.Credentials('none', 'none')
+            return
+        user = getattr(self.credentials, 'username', None)
+        if user is None:
+            user = getattr(self.credentials, 'user', None)
+        password = getattr(self.credentials, 'password', None)
+        user = 'none' if user is None else str(user)
+        password = 'none' if password is None else str(password)
+        self.credentials = kasa.Credentials(user, password)
+
+    def _kasa_credentials(self):
+        self._ensure_credentials()
+        return self.credentials
 
     def smac(self,mac):
         return re.sub(r'[:]+', '', mac)
@@ -1777,12 +1971,16 @@ class Controller(Node):
                 self.poly.Notices['credentials'] = msg
                 LOGGER.error(msg)
             self.credential_error = True
-            self.credentials = kasa.Credentials('none','none')
+            self.credentials = kasa.Credentials('none', 'none')
         else:
             if self.credential_error:
                 self.poly.Notices.delete('credentials')
             self.credential_error = False
-            self.credentials = kasa.Credentials(self.Parameters['user'],self.Parameters['password'])
+            # PG3 may deliver non-str values; kasa requires str credentials.
+            self.credentials = kasa.Credentials(
+                str(self.Parameters['user']),
+                str(self.Parameters['password']),
+            )
         #self.check_params()
         self.handler_params_st = True
 

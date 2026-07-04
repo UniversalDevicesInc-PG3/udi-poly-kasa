@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.3.15] - 2026-07-04
+
+### Fixed
+
+- **PG3 overload on restart:** device nodes no longer call `poly.ready()` (only the controller does once). Each `ready()` was re-requesting full `getAll` config for every `addNode`.
+- **addNode pacing:** wait for `ADDNODEDONE` for the specific address (not an arbitrary queue entry), clear stale queue entries at startup, and pause briefly between adds. Discover queues registrations and drains them on the startup thread so the asyncio mainloop is not blocked.
+- **VLAN / multi-network discover:** Extra Discovery Networks entries that are host or gateway IPs (e.g. `192.168.222.1`) are normalized to broadcast (`192.168.222.255`). Discover also derives broadcast targets from manual device IPs and saved device hosts, and long-poll discover uses the same target list.
+- **Manual device `discover_single` failures:** coerce host and credentials to strings before calling python-kasa (fixes `encoding without a string argument`), and do not start discover until custom params/credentials are loaded.
+- **False-positive HS300 strip cleanup:** only treat a strip parent as corrupt when its name matches an outlet alias (3.3.11 signature). User-renamed parents such as `Living Room | Behind Couch` are no longer deleted.
+
+### Changed
+
+- Restart still always calls `addNode` for known devices so PG3 registers the Python node even when the DB row already exists. Within a session, identity/address tracking prevents duplicate `addNode` on rediscover.
+
 ## [3.3.14] - 2026-07-03
 
 ### Fixed

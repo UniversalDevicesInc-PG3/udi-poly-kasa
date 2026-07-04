@@ -78,7 +78,6 @@ class SmartDeviceNode(Node):
             controller.poly.subscribe(controller.poly.POLL,   self.handler_poll)
         controller.poly.subscribe(controller.poly.START,  self.handler_start, address) 
         controller.poly.subscribe(controller.poly.DELETE,  self.handler_delete) 
-        self.poly.ready()
 
     def handler_start(self):
         LOGGER.debug(f'enter: {self.name} dev={self._dev_desc(self.dev)}')

@@ -42,10 +42,18 @@ If some supported devices are not being discovered, you can try to increase this
 
 Manually add a device host name or IP address
 
-#### Extra Disovery Networks
+#### Extra Discovery Networks
 
 By default the node server runs a discover on the default network of the machine running PG3.
-If the machine has multiple networks, or you have other networks on your LAN you can run discover
-on those networks e.g. 192.162.4.255.
+If devices are on another VLAN or subnet, add that network's **broadcast** address here.
+
+Use the broadcast address ending in `.255`, for example:
+
+- `192.168.222.255` — correct (broadcast)
+- `192.168.222.1` — incorrect (gateway); the plugin will rewrite this to `.255` and log a warning
+
+You can also list individual device IPs under **Kasa devices** for hosts that do not answer broadcast discovery.
+
+The plugin also auto-derives broadcast targets from configured manual device IPs and previously saved device hosts, so devices on other subnets are more likely to be found even if Extra Discovery Networks is incomplete.
 
 
