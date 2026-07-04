@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.3.17] - 2026-07-04
+
+### Added
+
+- **Known Kasa Devices table:** **Kasa Type** column (e.g. `DeviceType.Plug`) alongside the IoX node type.
+
+### Fixed
+
+- **Manual typed row names:** name fill now uses the result of manual `discover_single` (including when the device is already known at a different IP), matches by MAC identity, and runs again after startup connects so rows like `192.168.1.23` get the device name once connect completes.
+
+## [3.3.16] - 2026-07-04
+
+### Added
+
+- **Kasa Devices typed params:** optional **Device name** column; the plugin fills names on existing user rows after connect (never auto-adds discovered devices to this list).
+- **Stale IP migration:** when a manual row’s IP stops responding and the same device name is found at a new address, the row’s address is updated automatically.
+- **Configuration doc inventory:** live **Known Kasa Devices** HTML table (name, IoX ID, type, IP) appended below CONFIG.md on the Polyglot configuration page (udi-poly-notification pattern).
+
+### Fixed
+
+- **Typed data feedback loop (#25):** plugin updates to manual device rows use compare-before-save, a re-entrancy guard, and an early return in `handler_typed_data` so name/IP refreshes do not re-trigger `add_manual_devices`.
+
 ## [3.3.15] - 2026-07-04
 
 ### Fixed

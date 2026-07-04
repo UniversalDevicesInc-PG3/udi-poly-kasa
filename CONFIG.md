@@ -40,7 +40,12 @@ If some supported devices are not being discovered, you can try to increase this
 
 #### Kasa devices
 
-Manually add a device host name or IP address
+Manually add a device host name or IP address for devices that need direct lookup (for example on another VLAN). This list is **user-managed only** — the plugin does not add discovered devices here.
+
+- **Device host or IP** — required; the address used for direct discovery.
+- **Device name** — optional; filled automatically after the device at that IP is found. If the device moves to a new IP, the plugin may update this row when it can match the same name on the network.
+
+All discovered and saved devices appear in the **Known Kasa Devices** table at the bottom of this configuration page (read-only): name, IoX ID, IoX type, Kasa type (e.g. `DeviceType.Plug`), and IP address.
 
 #### Extra Discovery Networks
 
@@ -55,5 +60,4 @@ Use the broadcast address ending in `.255`, for example:
 You can also list individual device IPs under **Kasa devices** for hosts that do not answer broadcast discovery.
 
 The plugin also auto-derives broadcast targets from configured manual device IPs and previously saved device hosts, so devices on other subnets are more likely to be found even if Extra Discovery Networks is incomplete.
-
 

@@ -1,6 +1,6 @@
 
 from udi_interface import Node,LOGGER,Custom,LOG_HANDLER
-import logging,re,json,asyncio,signal,sys,threading,time,os,markdown2
+import logging,re,json,asyncio,signal,sys,threading,time,os,markdown2,html
 from datetime import datetime
 from threading import Thread,Event
 from concurrent.futures import TimeoutError as FutureTimeoutError
@@ -19,6 +19,8 @@ from nodes import SmartLightStripNode
 # We need an event loop for python-kasa since we run in a
 # thread which doesn't have a loop
 mainloop = asyncio.get_event_loop()
+
+_MANUAL_HOST_RE = re.compile(r'^(\d+\.\d+\.\d+\.\d+)\s*-\s*(.+)$')
 
 class Controller(Node):
 
@@ -96,6 +98,15 @@ class Controller(Node):
         self._pending_device_adds = []
         # Safe default until handler_params loads real credentials.
         self.credentials = kasa.Credentials('none', 'none')
+        self.manual_devices = None
+        self.manual_networks = None
+        # TypedData plugin writes: suppress add_manual_devices feedback loop (#25).
+        self._syncing_device_inventory = False
+        self._manual_device_hosts = set()
+        self._manual_failed_hosts = set()
+        self._manual_host_names = {}
+        self._manual_host_identity = {}
+        self._config_doc_table_sig = None
         self.poly.subscribe(self.poly.START,                  self.handler_start, address) 
         self.poly.subscribe(self.poly.POLL,                   self.handler_poll)
         self.poly.subscribe(self.poly.LOGLEVEL,               self.handler_log_level)
@@ -204,10 +215,6 @@ class Controller(Node):
         self.heartbeat()
         self.set_params()
         self.check_params()
-        configurationHelp = './CONFIG.md'
-        if os.path.isfile(configurationHelp):
-            cfgdoc = markdown2.markdown_path(configurationHelp)
-            self.poly.setCustomParamsDoc(cfgdoc)
         #
         # Wait for all handlers to finish (credentials must be loaded
         # before discover / discover_single).
@@ -247,6 +254,10 @@ class Controller(Node):
         except Exception:
             LOGGER.error('drain_startup_connects failed', exc_info=True)
             self.startup_in_progress = False
+        try:
+            self._after_inventory_sync()
+        except Exception:
+            LOGGER.error('_after_inventory_sync after startup failed', exc_info=True)
         # Outlet child nodes may not exist until IoX finishes hydrating and
         # startup connects run; delete with PG3 ack waits (homekit-hub pattern).
         try:
@@ -525,7 +536,11 @@ class Controller(Node):
     def add_manual_devices(self):
         if self.manual_devices is None or len(self.manual_devices) == 0:
             LOGGER.info("No manual devices configured")
+            self._after_inventory_sync()
             return
+        self._manual_failed_hosts = set()
+        self._manual_host_names = {}
+        self._manual_host_identity = {}
         future = asyncio.run_coroutine_threadsafe(self._add_manual_devices(), self.mainloop)
         try:
             res = future.result(timeout=self.discover_future_timeout)
@@ -538,24 +553,30 @@ class Controller(Node):
         # Register nodes on this thread (not asyncio) with paced addNode.
         self.drain_pending_device_adds()
         self.discover_done = True
+        self._after_inventory_sync()
         LOGGER.info("exit")
 
     async def _add_manual_devices(self):
         for mdev in self.manual_devices or []:
-            host = str((mdev or {}).get('address') or '').strip()
+            host = self._manual_device_host(mdev)
             if not host:
                 continue
             LOGGER.info(f"Adding manual device {host}")
             try:
                 dev = await self.discover_single(host=host)
                 if dev is None:
+                    self._manual_failed_hosts.add(host)
                     LOGGER.warning(
                         f"discover_single returned no device for {host}; "
                         f"skipping (host likely unreachable or circuit-broken)"
                     )
                     continue
+                self._manual_failed_hosts.discard(host)
+                await self.update_dev(dev)
+                self._remember_manual_host_lookup(host, dev)
                 self.queue_device_add(dev=dev)
             except Exception as ex:
+                self._manual_failed_hosts.add(host)
                 LOGGER.error(f"{ex} trying to connect to {host}", exc_info=False)
 
     def _normalize_broadcast_address(self, address):
@@ -610,7 +631,7 @@ class Controller(Node):
 
         for mdev in self.manual_devices or []:
             if isinstance(mdev, dict):
-                add(self._broadcast_for_host(mdev.get('address')))
+                add(self._manual_device_host(mdev))
 
         for key in list(self.Data):
             cfg = self.get_device_cfg(key)
@@ -643,6 +664,7 @@ class Controller(Node):
         # addNode on this thread with pacing; always register even if in PG3 DB.
         self.drain_pending_device_adds()
         self.discover_done = True
+        self._after_inventory_sync()
         LOGGER.info("exit")
 
     # We have this in controller so all error handling is in one
@@ -1645,6 +1667,7 @@ class Controller(Node):
                 res = None
             LOGGER.debug(f'result={res}')
         self.drain_pending_device_adds()
+        self._after_inventory_sync()
         LOGGER.info("exit")
 
     async def _discover_new_a(self, target=None):
@@ -1984,19 +2007,301 @@ class Controller(Node):
         #self.check_params()
         self.handler_params_st = True
 
+    def _manual_device_host(self, mdev):
+        """Extract host/IP from a manual device typed row."""
+        if not isinstance(mdev, dict):
+            return None
+        address = str(mdev.get('address') or '').strip()
+        if not address:
+            return None
+        match = _MANUAL_HOST_RE.match(address)
+        if match:
+            return match.group(1)
+        return address
+
+    def _normalize_inventory_name(self, name):
+        return str(name or '').strip().lower()
+
+    def _normalize_device_row(self, row):
+        if not isinstance(row, dict):
+            return {'address': '', 'name': ''}
+        host = self._manual_device_host(row) or ''
+        name = str(row.get('name') or '').strip()
+        return {'address': host, 'name': name}
+
+    def _devices_rows_equal(self, current, proposed):
+        cur = [self._normalize_device_row(r) for r in (current or [])]
+        prop = [self._normalize_device_row(r) for r in (proposed or [])]
+        return cur == prop
+
+    def _iter_unique_nodes(self):
+        seen = set()
+        for node in self.nodes_by_mac.values():
+            addr = getattr(node, 'address', None)
+            if addr is None or addr in seen:
+                continue
+            seen.add(addr)
+            yield node
+
+    def _record_type_label(self, node, cfg):
+        node_id = getattr(node, 'id', None) if node is not None else None
+        if node_id:
+            return str(node_id)
+        cfg = cfg or {}
+        return str(cfg.get('type') or '')
+
+    def _record_kasa_type_label(self, node, cfg):
+        cfg = cfg or {}
+        kasa_type = cfg.get('type')
+        if kasa_type:
+            return str(kasa_type)
+        dev = getattr(node, 'dev', None) if node is not None else None
+        device_type = getattr(dev, 'device_type', None) if dev is not None else None
+        if device_type is not None:
+            return str(device_type)
+        return ''
+
+    def _remember_manual_host_lookup(self, host, dev):
+        """Cache name/MAC for a manual IP so typed rows can fill before IoX host sync."""
+        host = str(host or '').strip()
+        if not host or dev is None:
+            return
+        alias = (getattr(dev, 'alias', None) or '').strip()
+        if not alias:
+            identity = self._node_identity_key(dev=dev)
+            existing = self.nodes_by_mac.get(identity) if identity else None
+            if existing is not None:
+                alias = (getattr(existing, 'name', None) or '').strip()
+                if not alias:
+                    existing_cfg = getattr(existing, 'cfg', None) or {}
+                    alias = (existing_cfg.get('name') or '').strip()
+        if alias:
+            self._manual_host_names[host] = alias
+        mac = getattr(dev, 'mac', None)
+        if mac:
+            self._manual_host_identity[host] = self.smac(mac)
+
+    def _collect_known_device_records(self):
+        """All known IoX devices for config doc and typed-row matching."""
+        records = []
+        seen_addresses = set()
+
+        for node in self._iter_unique_nodes():
+            addr = node.address
+            cfg = getattr(node, 'cfg', None) or {}
+            host = getattr(node, 'host', None) or cfg.get('host') or ''
+            records.append({
+                'name': getattr(node, 'name', None) or cfg.get('name') or '',
+                'id': addr,
+                'type': self._record_type_label(node, cfg),
+                'kasa_type': self._record_kasa_type_label(node, cfg),
+                'host': str(host or ''),
+                'address': addr,
+                'mac': cfg.get('mac'),
+                'device_id': cfg.get('device_id'),
+            })
+            seen_addresses.add(addr)
+
+        for key in list(self.Data):
+            if str(key).startswith('_'):
+                continue
+            cfg = self.get_device_cfg(key)
+            if not isinstance(cfg, dict):
+                continue
+            addr = cfg.get('address')
+            if not addr or addr in seen_addresses:
+                continue
+            seen_addresses.add(addr)
+            records.append({
+                'name': cfg.get('name') or '',
+                'id': addr,
+                'type': self._record_type_label(None, cfg),
+                'kasa_type': self._record_kasa_type_label(None, cfg),
+                'host': str(cfg.get('host') or ''),
+                'address': addr,
+                'mac': cfg.get('mac'),
+                'device_id': cfg.get('device_id'),
+            })
+
+        return records
+
+    def _apply_host_migration_to_cfg(self, records, norm_name, new_host):
+        for rec in records:
+            if self._normalize_inventory_name(rec.get('name')) != norm_name:
+                continue
+            addr = rec.get('address')
+            node = self.poly.getNode(addr) if addr else None
+            if node is not None:
+                node.host = new_host
+                cfg = getattr(node, 'cfg', None)
+                if isinstance(cfg, dict):
+                    cfg['host'] = new_host
+                    self.save_cfg(cfg)
+            else:
+                cfg = self.get_device_cfg(rec.get('mac') or addr)
+                if isinstance(cfg, dict):
+                    cfg['host'] = new_host
+                    self.save_cfg(cfg)
+            break
+
+    def _save_manual_device_rows(self, rows):
+        if self._devices_rows_equal(self.TypedData.get('devices'), rows):
+            return False
+        self._syncing_device_inventory = True
+        try:
+            self.TypedData['devices'] = rows
+        finally:
+            self._syncing_device_inventory = False
+        return True
+
+    def _refresh_manual_device_rows(self):
+        """Update name/IP on existing user typed rows only; never add rows."""
+        current = self.TypedData.get('devices')
+        if not current:
+            return False
+
+        records = self._collect_known_device_records()
+        live_hosts = {str(r.get('host') or '') for r in records if r.get('host')}
+        host_to_name = {
+            str(r['host']): r['name']
+            for r in records
+            if r.get('host') and r.get('name')
+        }
+        mac_to_name = {}
+        for rec in records:
+            mac = rec.get('mac')
+            rec_name = str(rec.get('name') or '').strip()
+            if mac and rec_name:
+                mac_to_name[mac] = rec_name
+        name_to_host = {}
+        for rec in records:
+            norm = self._normalize_inventory_name(rec.get('name'))
+            host = str(rec.get('host') or '')
+            if norm and host:
+                name_to_host[norm] = host
+
+        new_rows = []
+        for row in current:
+            new_row = dict(row) if isinstance(row, dict) else {}
+            host = self._manual_device_host(new_row)
+            name = str(new_row.get('name') or '').strip()
+
+            if host and not name:
+                if host in host_to_name:
+                    name = str(host_to_name[host] or '').strip()
+                elif host in self._manual_host_names:
+                    name = str(self._manual_host_names[host] or '').strip()
+                else:
+                    manual_mac = self._manual_host_identity.get(host)
+                    if manual_mac and manual_mac in mac_to_name:
+                        name = str(mac_to_name[manual_mac] or '').strip()
+                if name:
+                    LOGGER.debug(
+                        'Filled manual typed row name for %s -> %s',
+                        host,
+                        name,
+                    )
+                    new_row['name'] = name
+
+            norm_name = self._normalize_inventory_name(name)
+            if norm_name and norm_name in name_to_host:
+                live_host = name_to_host[norm_name]
+                stale = (
+                    host in self._manual_failed_hosts
+                    or host not in live_hosts
+                    or self.host_should_skip(host)
+                )
+                if live_host and host and live_host != host and stale:
+                    LOGGER.warning(
+                        "Migrating typed device '%s' from %s to %s",
+                        name,
+                        host,
+                        live_host,
+                    )
+                    new_row['address'] = live_host
+                    self._apply_host_migration_to_cfg(records, norm_name, live_host)
+                    host = live_host
+
+            new_rows.append(new_row)
+
+        return self._save_manual_device_rows(new_rows)
+
+    def _update_config_doc(self):
+        configuration_help = './CONFIG.md'
+        if not os.path.isfile(configuration_help):
+            return
+        records = self._collect_known_device_records()
+        sig = tuple(
+            sorted(
+                (
+                    str(r.get('name') or ''),
+                    str(r.get('id') or ''),
+                    str(r.get('type') or ''),
+                    str(r.get('kasa_type') or ''),
+                    str(r.get('host') or ''),
+                )
+                for r in records
+            )
+        )
+        if sig == self._config_doc_table_sig:
+            return
+        self._config_doc_table_sig = sig
+
+        try:
+            with open(configuration_help, 'r', encoding='utf-8') as cfg_file:
+                base = markdown2.markdown(cfg_file.read())
+        except Exception:
+            LOGGER.error('Failed to read CONFIG.md for config doc', exc_info=True)
+            return
+
+        html_parts = [
+            '<h3>Known Kasa Devices</h3>',
+            '<p>All devices discovered or saved by this node server (read-only).</p>',
+            '<table border="1" cellpadding="4" cellspacing="0">',
+            '<thead><tr><th>Name</th><th>ID</th><th>Type</th><th>Kasa Type</th><th>IP Address</th></tr></thead>',
+            '<tbody>',
+        ]
+        for rec in sorted(records, key=lambda r: (str(r.get('name') or '')).lower()):
+            html_parts.append(
+                '<tr><td>{name}</td><td>{id_}</td><td>{type_}</td><td>{kasa_type}</td><td>{host}</td></tr>'.format(
+                    name=html.escape(str(rec.get('name') or '')),
+                    id_=html.escape(str(rec.get('id') or '')),
+                    type_=html.escape(str(rec.get('type') or '')),
+                    kasa_type=html.escape(str(rec.get('kasa_type') or '')),
+                    host=html.escape(str(rec.get('host') or '')),
+                )
+            )
+        html_parts.append('</tbody></table>')
+        self.poly.setCustomParamsDoc(base + '\n'.join(html_parts))
+
+    def _after_inventory_sync(self):
+        self._refresh_manual_device_rows()
+        self._update_config_doc()
+
     def set_params(self):
         self.TypedParameters.load( 
             [
                 {
                     'name': 'devices',
                     'title': 'Kasa Devices',
-                    'desc': 'Allow adding Kasa Devices manually',
+                    'desc': (
+                        'Manually add a host or IP for devices that need direct lookup '
+                        '(e.g. other VLANs). The name column is filled automatically after '
+                        'the device is found. All discovered devices appear in the Known '
+                        'Kasa Devices table below, not here.'
+                    ),
                     'isList': True,
                     'params': [
                         {
                             'name': 'address',
                             'title': "Device host or IP",
                             'isRequired': True,
+                        },
+                        {
+                            'name': 'name',
+                            'title': 'Device name',
+                            'desc': 'Filled automatically after the device at this IP is found',
+                            'isRequired': False,
                         },
                     ]
                 },
@@ -2027,10 +2332,22 @@ class Controller(Node):
 
         self.manual_devices  = self.TypedData['devices']
         self.manual_networks = self.TypedData['networks']
-        # We don't add on initial startup, wait for all startup to finish
-        if (self.ready):
-            # devices were changed after node server was restarted, so add them.
+        new_hosts = {
+            self._manual_device_host(d)
+            for d in (self.manual_devices or [])
+            if self._manual_device_host(d)
+        }
+
+        if self._syncing_device_inventory:
+            self._manual_device_hosts = new_hosts
+            self.handler_typeddata_st = True
+            return
+
+        if self.ready and new_hosts != getattr(self, '_manual_device_hosts', set()):
+            self._manual_device_hosts = new_hosts
             self.add_manual_devices()
+        else:
+            self._manual_device_hosts = new_hosts
         self.handler_typeddata_st = True
 
     def handler_log_level(self,level):
