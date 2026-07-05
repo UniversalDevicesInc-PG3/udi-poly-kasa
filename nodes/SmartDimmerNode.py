@@ -64,7 +64,7 @@ class SmartDimmerNode(SmartDeviceNode):
             self.set_bri(self.brightness + 7)
 
     def dim(self):
-        LOGGER.debug('{self.pfx} connected={self.connected}')
+        LOGGER.debug(f'{self.pfx} connected={self.connected}')
         asyncio.run(self.dev.update())
         self.brightness = st2bri(self.dev.brightness)
         if self.is_connected() and self.brightness > 0:
@@ -80,20 +80,22 @@ class SmartDimmerNode(SmartDeviceNode):
         super().cmd_set_off(command)
 
     def cmd_set_bri(self,command):
+        if not self._cmd_requires_dimmable('SET_BRI'):
+            return False
         val = int(command.get('value'))
         LOGGER.info(f'{self.pfx} val={val}')
         asyncio.run(self.dev.turn_on())
         self.set_bri(val)
 
     def cmd_brt(self,command):
-        if not self.dev.is_dimmable:
-            LOGGER.error('{self.pfx} Not supported on this device')
+        if not self._cmd_requires_dimmable('BRT'):
+            return False
         asyncio.run(self.dev.turn_on())
         self.brt()
 
     def cmd_dim(self,command):
-        if not self.dev.is_dimmable:
-            LOGGER.error('{self.pfx} Not supported on this device')
+        if not self._cmd_requires_dimmable('DIM'):
+            return False
         self.dim()
 
     def cmd_set_mon(self,command):

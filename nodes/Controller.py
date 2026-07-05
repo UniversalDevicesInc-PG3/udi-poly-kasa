@@ -5,8 +5,9 @@ from datetime import datetime
 from threading import Thread,Event
 from concurrent.futures import TimeoutError as FutureTimeoutError
 from node_funcs import get_valid_node_name,get_valid_node_address
+from safe_custom import SafeCustom, redact_sensitive_params
 import kasa
-from kasa.exceptions import *
+from kasa.exceptions import AuthenticationError, KasaException, SmartDeviceException
 from nodes import SmartStripPlugNode
 from nodes import SmartStripNode
 from nodes import SmartPlugNode
@@ -33,7 +34,7 @@ class Controller(Node):
         self.in_long_poll  = False
         self.credential_error = False
         self.Notices         = Custom(self.poly, 'notices')
-        self.Parameters      = Custom(self.poly, 'customparams')
+        self.Parameters      = SafeCustom(self.poly, 'customparams')
         self.handler_params_st = None
         self.Data            = Custom(self.poly, 'customdata')
         self.handler_data_st = None
@@ -58,6 +59,9 @@ class Controller(Node):
         self._start_monotonic = time.monotonic()
         # (notice_key, source) -> monotonic timestamp of last write.
         self._notice_last_write = {}
+        # host -> True after the first auth ERROR for that host; further
+        # failures log at DEBUG until a successful update clears the flag.
+        self._auth_fail_logged = {}
         # Per-host circuit breaker. Hosts that have failed N times in a row
         # stop being probed by per-node connect_a/discover_single calls until
         # their next_try monotonic time. The longPoll discover sweep still
@@ -180,10 +184,15 @@ class Controller(Node):
             if self.startup_connect_gap:
                 time.sleep(self.startup_connect_gap)
         self.startup_connect_queue.clear()
-        self.startup_in_progress = False
 
     def handler_start(self):
         self.startup_in_progress = True
+        try:
+            self._handler_start_body()
+        finally:
+            self.startup_in_progress = False
+
+    def _handler_start_body(self):
         # Drop any ADDNODEDONE from the controller addNode so the first
         # device wait is not satisfied by a stale queue entry.
         self.n_queue.clear()
@@ -219,51 +228,78 @@ class Controller(Node):
         # Wait for all handlers to finish (credentials must be loaded
         # before discover / discover_single).
         #
-        cnt = 600
-        while ((self.handler_params_st is None or self.handler_data_st is None or self.handler_typedparams_st is None or self.handler_typeddata_st is None) and cnt > 0):
-            LOGGER.warning(
-                'Waiting for all to be loaded params=%s data=%s typedparams=%s '
-                'typeddata=%s... cnt=%s',
-                self.handler_params_st,
-                self.handler_data_st,
-                self.handler_typedparams_st,
-                self.handler_typeddata_st,
-                cnt,
+        def _handlers_ready():
+            return (
+                self.handler_params_st is not None
+                and self.handler_data_st is not None
+                and self.handler_typedparams_st is not None
+                and self.handler_typeddata_st is not None
             )
+
+        cnt = 600
+        wait_warned = False
+        last_wait_summary = time.monotonic()
+        while not _handlers_ready() and cnt > 0:
+            if not wait_warned:
+                LOGGER.warning(
+                    'Waiting for handlers to load (params/data/typedparams/typeddata)...'
+                )
+                wait_warned = True
+            else:
+                LOGGER.debug(
+                    'Waiting for handlers params=%s data=%s typedparams=%s '
+                    'typeddata=%s... cnt=%s',
+                    self.handler_params_st,
+                    self.handler_data_st,
+                    self.handler_typedparams_st,
+                    self.handler_typeddata_st,
+                    cnt,
+                )
+                now = time.monotonic()
+                if now - last_wait_summary >= 30:
+                    LOGGER.warning(
+                        'Still waiting for handlers to load... cnt=%s', cnt
+                    )
+                    last_wait_summary = now
             time.sleep(1)
             cnt -= 1
-        if cnt == 0:
-            LOGGER.error("Timed out waiting for handlers to startup")
-            #self.exit()
-        self._ensure_credentials()
-        try:
-            self._purge_stale_misnamed_strip_cfg()
-        except Exception:
-            LOGGER.error('_purge_stale_misnamed_strip_cfg failed', exc_info=True)
-        # Discover
-        try:
-            self.discover()
-        except Exception:
-            LOGGER.error('discover failed', exc_info=True)
-        try:
-            self.add_manual_devices()
-        except Exception:
-            LOGGER.error('add_manual_devices failed', exc_info=True)
-        try:
-            self.drain_startup_connects()
-        except Exception:
-            LOGGER.error('drain_startup_connects failed', exc_info=True)
-            self.startup_in_progress = False
-        try:
-            self._after_inventory_sync()
-        except Exception:
-            LOGGER.error('_after_inventory_sync after startup failed', exc_info=True)
-        # Outlet child nodes may not exist until IoX finishes hydrating and
-        # startup connects run; delete with PG3 ack waits (homekit-hub pattern).
-        try:
-            self.cleanup_corrupt_strip_nodes()
-        except Exception:
-            LOGGER.error('cleanup_corrupt_strip_nodes failed', exc_info=True)
+        if not _handlers_ready():
+            LOGGER.error(
+                'Timed out waiting for handlers to startup; skipping discover '
+                'and manual device add'
+            )
+            self.poly.Notices['startup'] = (
+                'Configuration handlers did not finish loading in time; '
+                'discover was skipped. Restart the node server or check PG3 logs.'
+            )
+        else:
+            self._ensure_credentials()
+            try:
+                self._purge_stale_misnamed_strip_cfg()
+            except Exception:
+                LOGGER.error('_purge_stale_misnamed_strip_cfg failed', exc_info=True)
+            try:
+                self.discover()
+            except Exception:
+                LOGGER.error('discover failed', exc_info=True)
+            try:
+                self.add_manual_devices()
+            except Exception:
+                LOGGER.error('add_manual_devices failed', exc_info=True)
+            try:
+                self.drain_startup_connects()
+            except Exception:
+                LOGGER.error('drain_startup_connects failed', exc_info=True)
+            try:
+                self._after_inventory_sync()
+            except Exception:
+                LOGGER.error('_after_inventory_sync after startup failed', exc_info=True)
+            # Outlet child nodes may not exist until IoX finishes hydrating and
+            # startup connects run; delete with PG3 ack waits (homekit-hub pattern).
+            try:
+                self.cleanup_corrupt_strip_nodes()
+            except Exception:
+                LOGGER.error('cleanup_corrupt_strip_nodes failed', exc_info=True)
         self.ready = True
         LOGGER.info(f'exit {self.name}')
 
@@ -690,17 +726,17 @@ class Controller(Node):
             await dev.update()
             ret = True
         except AuthenticationError as msg:
-            self.set_device_notice(
-                dev,
-                f'Authentication failed: {msg}',
-                source='auth',
-            )
-            LOGGER.error(
+            notice = self._auth_failure_notice_message(msg)
+            self.set_device_notice(dev, notice, source='auth')
+            auth_key = host or 'unknown'
+            log = LOGGER.debug if self._auth_fail_logged.get(auth_key) else LOGGER.error
+            log(
                 'Failed to authenticate %s (%s): %s',
                 self._device_display_name(dev),
                 host,
                 msg,
             )
+            self._auth_fail_logged[auth_key] = True
         except KasaException as ex:
             # KasaException already encodes the actionable bit (e.g. "Host
             # is down", "Timed out") in its message. The traceback is the
@@ -726,6 +762,9 @@ class Controller(Node):
                 LOGGER.error(f"Failed to update {ex}: {dev}", exc_info=True)
         if ret:
             self.host_record_success(host)
+            if host and host in self._auth_fail_logged:
+                self._auth_fail_logged.pop(host, None)
+                LOGGER.info('host %s authenticated successfully after prior failure', host)
             self.clear_device_notice(dev)
             if self.change_node_names:
                 identity = self._node_identity_key(dev=dev)
@@ -822,40 +861,234 @@ class Controller(Node):
         host = getattr(dev, 'host', 'unknown')
         return f"dev_{host}".replace('.', '_')
 
+    def _notice_dev_for_host(self, host, dev=None):
+        """Return a dev-like object for per-host notices (real dev or host stub)."""
+        if dev is not None:
+            return dev
+        if host is None:
+            return None
+        for node in self._nodes_for_host(host):
+            node_dev = getattr(node, 'dev', None)
+            if node_dev is not None:
+                return node_dev
+        class _HostNoticeStub:
+            pass
+        stub = _HostNoticeStub()
+        stub.host = host
+        return stub
+
+    def _node_label(self, node):
+        """Best-effort friendly label from an IoX node."""
+        if node is None:
+            return None
+        name = getattr(node, 'name', None)
+        if name:
+            return name
+        cfg = getattr(node, 'cfg', None)
+        if cfg and cfg.get('name'):
+            return cfg['name']
+        return None
+
+    def _nodes_for_host(self, host):
+        """Return IoX nodes that manage a host IP (session map + poly registry)."""
+        if not host:
+            return []
+        host = str(host)
+        found = []
+        seen = set()
+        for node in self.nodes_by_mac.values():
+            node_id = id(node)
+            if node_id in seen:
+                continue
+            if str(getattr(node, 'host', None) or '') == host:
+                found.append(node)
+                seen.add(node_id)
+        for node_address in self.poly.getNodes():
+            node = self.poly.getNode(node_address)
+            if node is None:
+                continue
+            node_id = id(node)
+            if node_id in seen:
+                continue
+            node_host = getattr(node, 'host', None)
+            if node_host is None:
+                cfg = getattr(node, 'cfg', None)
+                if cfg:
+                    node_host = cfg.get('host')
+            if str(node_host or '') == host:
+                found.append(node)
+                seen.add(node_id)
+        return found
+
+    def _cfg_for_host(self, host):
+        if not host:
+            return None
+        host = str(host)
+        for key in self.Data:
+            cfg = self.get_device_cfg(key)
+            if cfg and str(cfg.get('host') or '') == host:
+                return cfg
+        return None
+
+    @staticmethod
+    def _dev_attr(dev, name, default=None):
+        """Read a kasa device attribute without raising when update() failed."""
+        if dev is None:
+            return default
+        try:
+            return getattr(dev, name)
+        except KasaException:
+            return default
+        except Exception:
+            return default
+
+    def _cfg_for_dev(self, dev):
+        """Return saved device cfg for a kasa dev, keyed by MAC/device_id/host."""
+        if dev is None:
+            return None
+        mac = self._dev_attr(dev, 'mac')
+        if mac:
+            cfg = self.get_device_cfg(self.smac(mac))
+            if cfg:
+                return cfg
+            cfg = self.get_device_cfg(get_valid_node_address(mac))
+            if cfg:
+                return cfg
+        device_id = self._dev_attr(dev, 'device_id')
+        if device_id:
+            cfg = self.get_device_cfg(self.smac(device_id))
+            if cfg:
+                return cfg
+        host = self._dev_attr(dev, 'host')
+        if host:
+            return self._cfg_for_host(host)
+        return None
+
+    def _pg3_name_for_address(self, address):
+        if not address:
+            return None
+        address = str(address).strip()
+        if hasattr(self.poly, 'getNodeNameFromDb'):
+            try:
+                name = self.poly.getNodeNameFromDb(address)
+                if name:
+                    return name
+            except Exception:
+                LOGGER.debug(
+                    'getNodeNameFromDb failed for %s', address, exc_info=True
+                )
+        meta = self._pg3_node_meta(address)
+        if meta:
+            name = meta.get('name')
+            if name:
+                return name
+        return None
+
+    def _db_name_for_dev(self, dev):
+        """IoX/PG3 node name for a kasa dev before Python nodes are registered."""
+        if dev is None:
+            return None
+        cfg = self._cfg_for_dev(dev)
+        if cfg:
+            name = cfg.get('name')
+            if name:
+                return name
+            address = cfg.get('address')
+            if address:
+                name = self._pg3_name_for_address(address)
+                if name:
+                    return name
+        mac = self._dev_attr(dev, 'mac')
+        if mac:
+            name = self._pg3_name_for_address(get_valid_node_address(mac))
+            if name:
+                return name
+        identity = self._node_identity_key(dev=dev)
+        if identity:
+            for node_address in self.poly.getNodes():
+                if str(node_address).lower().startswith(identity.lower()):
+                    name = self._pg3_name_for_address(node_address)
+                    if name:
+                        return name
+        if hasattr(self.poly, 'getNodesFromDb'):
+            try:
+                for meta in self.poly.getNodesFromDb() or []:
+                    if not isinstance(meta, dict):
+                        continue
+                    addr = str(meta.get('address') or '').strip()
+                    if not addr or addr == self.address:
+                        continue
+                    if mac and addr == get_valid_node_address(mac):
+                        name = meta.get('name')
+                        if name:
+                            return name
+            except Exception:
+                LOGGER.debug('getNodesFromDb scan failed', exc_info=True)
+        return None
+
     def _device_display_name(self, dev):
         """Friendly device label for notices/logs when dev.alias is missing."""
-        alias = getattr(dev, 'alias', None)
+        alias = None
+        try:
+            alias = getattr(dev, 'alias', None)
+            if alias:
+                alias = str(alias).strip()
+        except Exception:
+            alias = None
         if alias:
             return alias
+        db_name = self._db_name_for_dev(dev)
+        if db_name:
+            return db_name
         identity = self._node_identity_key(dev=dev)
         if identity:
             node = self.nodes_by_mac.get(identity)
-            if node is not None:
-                name = getattr(node, 'name', None)
-                if name:
-                    return name
+            label = self._node_label(node)
+            if label:
+                return label
         host = getattr(dev, 'host', None)
         if host:
+            host = str(host)
             # Prefer the strip parent node name over an arbitrary outlet
             # when several nodes share the same host IP.
-            for node in self.nodes_by_mac.values():
-                if (
-                    isinstance(node, SmartStripNode)
-                    and getattr(node, 'host', None) == host
-                ):
-                    name = getattr(node, 'name', None)
-                    if name:
-                        return name
-            for node in self.nodes_by_mac.values():
-                if getattr(node, 'host', None) == host:
-                    name = getattr(node, 'name', None)
-                    if name:
-                        return name
-            for key in self.Data:
-                cfg = self.get_device_cfg(key)
-                if cfg and cfg.get('host') == host and cfg.get('name'):
-                    return cfg['name']
+            for node in self._nodes_for_host(host):
+                if isinstance(node, SmartStripNode):
+                    label = self._node_label(node)
+                    if label:
+                        return label
+            for node in self._nodes_for_host(host):
+                label = self._node_label(node)
+                if label:
+                    return label
+        try:
+            return self._dev_default_name(dev)
+        except Exception:
+            pass
         return 'Device'
+
+    def _credentials_configured(self):
+        """True when real Kasa credentials are set (not blank or none/none)."""
+        if self.credential_error:
+            return False
+        user = str(self.Parameters.get('user') or '').strip()
+        password = str(self.Parameters.get('password') or '').strip()
+        if not user or not password:
+            return False
+        return not (user.lower() == 'none' and password.lower() == 'none')
+
+    def _auth_failure_notice_message(self, _detail):
+        """User-facing auth notice; differs for missing vs rejected credentials."""
+        if not self._credentials_configured():
+            return (
+                'Kasa credentials not configured — enter your TP-Link email and '
+                'password in Custom Parameters (both case-sensitive). Use none/none '
+                'only for older local-only devices.'
+            )
+        return (
+            'Authentication failed — device rejected login. Verify the Kasa '
+            'email and password in Custom Parameters (case-sensitive) and '
+            'confirm this device is on the same TP-Link account in the Kasa app.'
+        )
 
     def _existing_node_for_dev(self, dev):
         """Return an IoX node already managing this discovered device, if any."""
@@ -913,7 +1146,7 @@ class Controller(Node):
         model = self._dev_model(dev)
         if model:
             return get_valid_node_name(f'Kasa {model}')
-        mac = getattr(dev, 'mac', None)
+        mac = self._dev_attr(dev, 'mac')
         if mac:
             return get_valid_node_name(f'Kasa {self.smac(mac)}')
         host = getattr(dev, 'host', None)
@@ -1340,6 +1573,18 @@ class Controller(Node):
     # Notices channel each poll, generating tens of DEBUG lines per write.
     _NOTICE_WRITE_COOLDOWN_SECS = 60
 
+    def _notice_body_from_value(self, value):
+        try:
+            return value.split('] ', 2)[2]
+        except (IndexError, ValueError):
+            return value
+
+    def _notice_label_from_body(self, body):
+        try:
+            return body.split(' (', 1)[0]
+        except (IndexError, ValueError):
+            return body
+
     def set_device_notice(self, dev, message, source='state'):
         """Set a single, timestamped notice per device.
 
@@ -1351,6 +1596,8 @@ class Controller(Node):
         window are coalesced even if the body wobbles, so transient error
         text differences don't cause MQTT/log churn.
         """
+        if dev is None:
+            return
         key = self._notice_key_for_device(dev)
         body = f"{self._device_display_name(dev)} ({getattr(dev, 'host', 'unknown')}): {message}"
         new_priority = self._NOTICE_SOURCE_PRIORITY.get(source, 0)
@@ -1366,11 +1613,25 @@ class Controller(Node):
             if existing_priority > new_priority:
                 # A more specific failure is already on the UI; don't downgrade it.
                 return
-        # Cooldown: same (host, source) recently written -> skip.
+        # Cooldown: same (host, source) recently written -> skip, unless we
+        # are upgrading a generic "Device" label to a real IoX/PG3 name.
         cooldown_key = (key, source)
         last = self._notice_last_write.get(cooldown_key, 0.0)
         now = time.monotonic()
-        if existing is not None and now - last < self._NOTICE_WRITE_COOLDOWN_SECS:
+        upgrading_generic_label = False
+        if existing is not None:
+            old_body = self._notice_body_from_value(existing)
+            old_label = self._notice_label_from_body(old_body)
+            new_label = self._notice_label_from_body(body)
+            upgrading_generic_label = (
+                old_label == 'Device'
+                and new_label not in (None, '', 'Device')
+            )
+        if (
+            existing is not None
+            and now - last < self._NOTICE_WRITE_COOLDOWN_SECS
+            and not upgrading_generic_label
+        ):
             return
         timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         # Embed source so future calls can compare priority without extra state.
@@ -1378,6 +1639,8 @@ class Controller(Node):
         self._notice_last_write[cooldown_key] = now
 
     def clear_device_notice(self, dev):
+        if dev is None:
+            return
         key = self._notice_key_for_device(dev)
         try:
             self.poly.Notices.delete(key)
@@ -1430,6 +1693,14 @@ class Controller(Node):
                 s['fail'],
                 int(backoff),
             )
+            self.set_device_notice(
+                self._notice_dev_for_host(host),
+                (
+                    f'Host unreachable after {s["fail"]} failures; '
+                    f'pausing probes for {int(backoff)}s'
+                ),
+                source='connect',
+            )
 
     def host_record_success(self, host):
         if host is None:
@@ -1438,6 +1709,7 @@ class Controller(Node):
         self._host_state[host] = {'fail': 0, 'next_try': 0.0, 'next_probe': 0.0}
         if prev is not None and prev.get('fail', 0) >= self._host_breaker_threshold:
             LOGGER.info('host %s circuit reset after success', host)
+            self.clear_device_notice(self._notice_dev_for_host(host))
 
     def host_should_quick_probe(self, host):
         """True iff the host is currently circuit-broken and the per-host
@@ -1754,8 +2026,10 @@ class Controller(Node):
             if device_id:
                 return self.smac(device_id)
             return None
-        if dev is not None and getattr(dev, 'mac', None):
-            return self.smac(dev.mac)
+        if dev is not None:
+            mac = self._dev_attr(dev, 'mac')
+            if mac:
+                return self.smac(mac)
         if cfg is not None and cfg.get('mac'):
             return self.smac(cfg['mac'])
         return None
@@ -1978,7 +2252,7 @@ class Controller(Node):
         self.handler_data_st = True
 
     def handler_params(self,params):
-        LOGGER.debug(f'enter: Loading typed data now {params}')
+        LOGGER.debug('enter: Loading typed data now %s', redact_sensitive_params(params))
         self.Parameters.load(params)
         #
         # Make sure params exist
@@ -2036,7 +2310,11 @@ class Controller(Node):
         #
         if ( self.Parameters['user'] == "" or self.Parameters['password'] == ""):
             if not self.credential_error:
-                msg = f"Must Enter Kasa user and password if using newer devices, use none/none if you don't have any"
+                msg = (
+                    'Kasa credentials not configured — enter your TP-Link email and '
+                    'password in Custom Parameters (both case-sensitive). Use none/none '
+                    'only for older local-only devices.'
+                )
                 self.poly.Notices['credentials'] = msg
                 LOGGER.error(msg)
             self.credential_error = True
@@ -2123,7 +2401,7 @@ class Controller(Node):
                     alias = (existing_cfg.get('name') or '').strip()
         if alias:
             self._manual_host_names[host] = alias
-        mac = getattr(dev, 'mac', None)
+        mac = self._dev_attr(dev, 'mac')
         if mac:
             self._manual_host_identity[host] = self.smac(mac)
 

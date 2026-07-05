@@ -228,22 +228,24 @@ class SmartBulbNode(SmartDeviceNode):
         self.set_off()
 
     def cmd_set_bri(self,command):
+        if not self._cmd_requires_dimmable('SET_BRI'):
+            return False
         val = int(command.get('value'))
         LOGGER.info(f'{self.pfx} val={val}')
         fut = asyncio.run_coroutine_threadsafe(self.set_bri_a(val), self.controller.mainloop)
         return self._future_result(fut)
 
     def cmd_brt(self,command):
+        if not self._cmd_requires_dimmable('BRT'):
+            return False
         LOGGER.debug(f'{self.pfx} connected={self.connected}')
-        if not self.dev.is_dimmable:
-            LOGGER.error(f'{self.pfx} Not supported on this device')
         fut = asyncio.run_coroutine_threadsafe(self.brt_a(), self.controller.mainloop)
         return self._future_result(fut)
 
     def cmd_dim(self,command):
+        if not self._cmd_requires_dimmable('DIM'):
+            return False
         LOGGER.debug(f'{self.pfx} connected={self.connected}')
-        if not self.dev.is_dimmable:
-            LOGGER.error(f'{self.pfx} Not supported on this device')
         fut = asyncio.run_coroutine_threadsafe(self.dim_a(), self.controller.mainloop)
         return self._future_result(fut)
 
@@ -314,7 +316,10 @@ class SmartBulbNode(SmartDeviceNode):
         return self._future_result(fut)
 
     def cmd_set_color_xy(self, command):
-       LOGGER.error('TODO: Not yet implemented')
+        return self._cmd_reject_unsupported(
+            'SET_COLOR_XY',
+            'CIE XY color is not supported by this plugin',
+        )
 
     def cmd_set_mon(self,command):
         super().cmd_set_mon(command)

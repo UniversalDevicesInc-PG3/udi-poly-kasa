@@ -80,10 +80,8 @@ class SmartDeviceNode(Node):
         controller.poly.subscribe(controller.poly.DELETE,  self.handler_delete) 
 
     def handler_start(self):
-        LOGGER.debug(f'enter: {self.name} dev={self._dev_desc(self.dev)}')
         self.controller.enqueue_startup_connect(self)
         self.ready = True
-        LOGGER.debug(f'exit: {self.name} dev={self._dev_desc(self.dev)}')
 
     def handler_poll(self, polltype):
         if self.get_mon == 0:
@@ -190,13 +188,11 @@ class SmartDeviceNode(Node):
         self._short_poll_busy_logged = False
         self.in_short_poll = True
         try:
-            res = self._run_coro(self._shortPoll_a(), '_shortPoll_a')
+            self._run_coro(self._shortPoll_a(), '_shortPoll_a')
         finally:
             self.in_short_poll = False
-        LOGGER.debug(f'{self.pfx} shortPoll result={res}')
 
     async def _shortPoll_a(self):
-        LOGGER.debug(f'{self.pfx} enter: {self.name}')
         if not self.ready:
             LOGGER.warning(f'{self.pfx} Not ready, skipping')
             return
@@ -222,7 +218,6 @@ class SmartDeviceNode(Node):
                 return
         if await self.connect_a():
             await self.set_state_a(set_energy=False)
-        LOGGER.debug(f'{self.pfx} exit: {self.name}')
 
     def longPoll(self):
         if self.in_long_poll:
@@ -233,10 +228,9 @@ class SmartDeviceNode(Node):
         self._long_poll_busy_logged = False
         self.in_long_poll = True
         try:
-            res = self._run_coro(self._longPoll_a(), '_longPoll_a')
+            self._run_coro(self._longPoll_a(), '_longPoll_a')
         finally:
             self.in_long_poll = False
-        LOGGER.debug(f'{self.pfx} longPoll result={res}')
 
     async def _longPoll_a(self):
         if not self.ready:
@@ -265,9 +259,7 @@ class SmartDeviceNode(Node):
         return bool(self._run_coro(self.connect_a(), 'connect_a', default=False))
 
     async def connect_a(self):
-        LOGGER.debug(f'{self.pfx} enter: {self.name} dev={self._dev_desc(self.dev)}')
         if not self.is_connected():
-            LOGGER.debug(f'{self.pfx} connected={self.is_connected()}')
             # When the controller's circuit breaker has marked this host as
             # repeatedly unreachable, don't pay the discovery/update timeout
             # cost again until next_try elapses, the longPoll re-test wins,
@@ -289,10 +281,8 @@ class SmartDeviceNode(Node):
                     self.set_connected(False,f"{self.pfx} Unable to discover {self.host}")
                 else:
                     res = await self.update_a()
-                    LOGGER.debug(f'{self.pfx} update res={res}')
                     if res:
                         self.set_connected(True)
-                        LOGGER.debug(f'{self.pfx} calling reconnected')
                         self.reconnected()
                     else:
                         self.set_connected(
@@ -312,17 +302,12 @@ class SmartDeviceNode(Node):
                     f"{self.pfx} Unknown exception {ex} connecting to device {self.host} will try again later",
                     exc_info=True
                 )
-        LOGGER.debug(f'{self.pfx} exit:{self.connected} {self.name} dev={self._dev_desc(self.dev)}')
         return self.is_connected()
 
     def update(self):
-        LOGGER.debug(f'enter: {self.name} dev={self._dev_desc(self.dev)}')
-        res = self._run_coro(self.update_a(), 'update_a', default=False)
-        LOGGER.debug(f'exit:{res} {self.name} dev={self._dev_desc(self.dev)}')
-        return res
+        return self._run_coro(self.update_a(), 'update_a', default=False)
 
     async def update_a(self):
-        LOGGER.debug(f'enter: {self.name} dev={self._dev_desc(self.dev)}')
         ret = False
         if self.dev is None:
             ret = await self.connect_a()
@@ -333,7 +318,6 @@ class SmartDeviceNode(Node):
                     False,
                     f'{self.pfx} failed updating, see log'
                 )
-        LOGGER.debug(f'exit:{ret} {self.name} dev={self._dev_desc(self.dev)}')
         return ret
 
     def set_on(self):
@@ -373,7 +357,6 @@ class SmartDeviceNode(Node):
 
     async def set_state_a(self,set_energy=True):
         try:
-            LOGGER.debug(f'{self.pfx} enter: dev={self._dev_desc(self.dev)}')
             # This doesn't call set_energy, since that is only called on long_poll's
             # We don't use self.connected here because dev might be good, but device is unplugged
             # So then when it's plugged back in the same dev will still work
@@ -382,16 +365,13 @@ class SmartDeviceNode(Node):
                 if self.dev.is_on is True:
                     if self.is_dimmable(self.dev):
                         self.brightness = st2bri(self.dev.brightness)
-                        LOGGER.debug(f'{self.pfx} setDriver(ST,{self.dev.brightness})')
                         self.setDriver('ST',self.dev.brightness)
                         self.setDriver('GV5',int(st2bri(self.dev.brightness)))
                     else:
                         self.brightness = 100
-                        LOGGER.debug(f'{self.pfx} setDriver(ST,100)')
                         self.setDriver('ST',100)
                 else:
                     self.brightness = 0
-                    LOGGER.debug(f'{self.pfx} setDriver(ST,0)')
                     self.setDriver('ST',0)
                 if self.is_color(self.dev):
                     hsv = self.dev.hsv
@@ -403,11 +383,9 @@ class SmartDeviceNode(Node):
 
                 # This happens when a device is alive on startup, but later disappears, then comes back.
                 if not ocon and self.connected:
-                    LOGGER.debug(f'{self.pfx} calling reconnected')
                     self.reconnected()
                 if set_energy:
                     await self._set_energy_a()
-            LOGGER.debug(f'{self.pfx} exit:  dev={self._dev_desc(self.dev)}')
         except Exception as ex:
             host = getattr(self.dev, 'host', None) or self.host
             LOGGER.error(f'Problem {ex} setting device state {host}',exc_info=True)
@@ -457,22 +435,22 @@ class SmartDeviceNode(Node):
     def set_connected(self,st,msg=None,exc_info=False):
         if self.error_connect and st:
             LOGGER.warning(f"{self.pfx} Device {self.host} responding again")
-            if self.dev is not None:
-                self.controller.clear_device_notice(self.dev)
+            self.controller.clear_device_notice(
+                self.controller._notice_dev_for_host(self.host, self.dev)
+            )
             self.error_connect = False
         if not st:
             self.error_connect = True
             if msg is not None:
                 LOGGER.error(msg,exc_info=exc_info)
-                if self.dev is not None:
-                    # Lower priority than update_dev/auth so we don't replace
-                    # the more specific exception with a generic echo like
-                    # "failed updating, see log" or "res=False".
-                    self.controller.set_device_notice(
-                        self.dev,
-                        msg.replace(f"{self.pfx} ", "", 1),
-                        source='connect',
-                    )
+                # Lower priority than update_dev/auth so we don't replace
+                # the more specific exception with a generic echo like
+                # "failed updating, see log" or "res=False".
+                self.controller.set_device_notice(
+                    self.controller._notice_dev_for_host(self.host, self.dev),
+                    msg.replace(f"{self.pfx} ", "", 1),
+                    source='connect',
+                )
         # Just return if setting to same status
         if st == self.connected:
             return
@@ -523,3 +501,21 @@ class SmartDeviceNode(Node):
         val = int(command.get('value'))
         LOGGER.debug(f'{self.pfx} val={val}')
         self.set_mon(val)
+
+    def _cmd_requires_dev(self, cmd_name):
+        if self.dev is None:
+            LOGGER.error(f'{self.pfx} {cmd_name}: device not connected')
+            return False
+        return True
+
+    def _cmd_requires_dimmable(self, cmd_name):
+        if not self._cmd_requires_dev(cmd_name):
+            return False
+        if not self.is_dimmable(self.dev):
+            LOGGER.error(f'{self.pfx} {cmd_name}: dimming not supported on this device')
+            return False
+        return True
+
+    def _cmd_reject_unsupported(self, cmd_name, reason):
+        LOGGER.error(f'{self.pfx} {cmd_name}: {reason}')
+        return False

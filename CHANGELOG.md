@@ -7,6 +7,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.3.22] - 2026-07-05
+
+### Fixed
+
+- **Offline device notices:** `_cfg_for_dev` / `_db_name_for_dev` no longer read `dev.mac` before `update()` succeeds, preventing cascading `You need to await update()` tracebacks when a host is down or unreachable.
+
+## [3.3.21] - 2026-07-05
+
+### Added
+
+- **Plugin tests:** `tests/` covering discovery broadcast targets, add-node pacing, per-host circuit breaker, and bulb command capability guards.
+
+### Removed
+
+- **ISSUES.txt:** deleted stale 2024 bug notes (issues already fixed in prior releases).
+
+## [3.3.20] - 2026-07-05
+
+### Fixed
+
+- **Bulb/dimmer BRT/DIM guards:** `cmd_brt`/`cmd_dim`/`SET_BRI` check `dev is None` and dimmable capability before touching the device.
+- **SET_COLOR_XY:** explicitly rejected with a clear log message (not implemented).
+- **SmartDimmerNode:** fixed broken `{self.pfx}` log strings in `dim` and error paths.
+- **Controller startup:** `startup_in_progress` cleared in `try/finally`; skip discover/manual add when config handlers time out.
+
+## [3.3.19] - 2026-07-05
+
+### Fixed
+
+- **Credential logging:** redact Kasa passwords from plugin and `customparams` debug logs.
+- **Auth notices:** distinguish missing credentials from device-rejected login in PG3 notices.
+- **Auth log spam:** log the first authentication failure per host at ERROR; repeat failures at DEBUG until the device authenticates successfully.
+
 ## [3.3.18] - 2026-07-05
 
 ### Fixed
