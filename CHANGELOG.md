@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.3.18] - 2026-07-05
+
+### Fixed
+
+- **Manual device add after `update()` failure:** skip queueing when `update_dev` fails instead of crashing in `get_valid_node_name(None)`.
+- **Misclassified HS300 strips:** model-based strip detection (`HS300`, `KP303`, etc.) when Kasa reports `DeviceType.Plug` so strips add as `SmartStrip` nodes with a fallback name.
+- **P125M / unknown plugs:** map `DeviceType.Unknown` plug models (e.g. `P125M`) to `DeviceType.Plug` after a successful update.
+
 ## [3.3.17] - 2026-07-04
 
 ### Added

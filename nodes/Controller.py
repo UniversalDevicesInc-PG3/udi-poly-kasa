@@ -572,7 +572,13 @@ class Controller(Node):
                     )
                     continue
                 self._manual_failed_hosts.discard(host)
-                await self.update_dev(dev)
+                if not await self.update_dev(dev):
+                    self._manual_failed_hosts.add(host)
+                    LOGGER.warning(
+                        'Manual device %s reachable but update failed; skipping add',
+                        host,
+                    )
+                    continue
                 self._remember_manual_host_lookup(host, dev)
                 self.queue_device_add(dev=dev)
             except Exception as ex:
@@ -867,6 +873,52 @@ class Controller(Node):
 
     _STRIP_PARENT_TYPES = ('SmartStrip', 'DeviceType.Strip')
 
+    def _dev_model(self, dev):
+        return str(getattr(dev, 'model', None) or '')
+
+    def _model_looks_like_strip(self, model):
+        model = str(model or '').upper()
+        if not model:
+            return False
+        return (
+            model.startswith('HS')
+            or model.startswith('KP3')
+            or 'STRIP' in model
+        )
+
+    def _dev_is_strip_parent(self, dev):
+        if dev is None:
+            return False
+        if str(dev.device_type) == 'DeviceType.Strip' or getattr(dev, 'is_strip', False):
+            return True
+        return self._model_looks_like_strip(self._dev_model(dev))
+
+    def _normalize_dev_type(self, dev):
+        dev_type = str(dev.device_type)
+        if self._dev_is_strip_parent(dev):
+            return 'DeviceType.Strip'
+        if dev_type == 'DeviceType.Unknown':
+            model = self._dev_model(dev).upper()
+            if model.startswith('P1') or model.startswith('KP115') or model.startswith('EP25'):
+                return 'DeviceType.Plug'
+        return dev_type
+
+    def _dev_default_name(self, dev):
+        if self._dev_is_strip_parent(dev):
+            model = self._dev_model(dev) or 'Strip'
+            return get_valid_node_name(f'SmartStrip {model}')
+        alias = (getattr(dev, 'alias', None) or '').strip()
+        if alias:
+            return get_valid_node_name(alias)
+        model = self._dev_model(dev)
+        if model:
+            return get_valid_node_name(f'Kasa {model}')
+        mac = getattr(dev, 'mac', None)
+        if mac:
+            return get_valid_node_name(f'Kasa {self.smac(mac)}')
+        host = getattr(dev, 'host', None)
+        return get_valid_node_name(host or 'Kasa device')
+
     def _is_strip_plug_node(self, node):
         return getattr(node, 'id', '').startswith('SmartStripPlug_')
 
@@ -907,7 +959,9 @@ class Controller(Node):
     def _is_strip_parent_cfg(self, cfg):
         if not isinstance(cfg, dict):
             return False
-        return cfg.get('type') in self._STRIP_PARENT_TYPES
+        if cfg.get('type') in self._STRIP_PARENT_TYPES:
+            return True
+        return self._model_looks_like_strip(cfg.get('model'))
 
     @staticmethod
     def _is_misnamed_strip_parent_name(name):
@@ -1713,16 +1767,8 @@ class Controller(Node):
             parent = self
         if dev is not None:
             mac  = dev.mac
-            type = str(dev.device_type)
-            if type == 'DeviceType.Strip' or dev.is_strip:
-                # Parent strip alias can mirror an outlet name on HS300.
-                model = getattr(dev, 'model', None) or 'Strip'
-                name = get_valid_node_name(f'SmartStrip {model}')
-            elif hasattr(dev,'alias'):
-                name = dev.alias 
-            else:
-                LOGGER.error(f"What is this device with no alias? {dev}")
-                return False
+            type = self._normalize_dev_type(dev)
+            name = self._dev_default_name(dev)
             LOGGER.info(f"Got a {type}: {dev}")
             if address_suffix_num is None:
                 address = get_valid_node_address(mac)
