@@ -5,7 +5,8 @@
 #
 from udi_interface import Node,LOGGER
 import asyncio
-from kasa import SmartLightStrip,SmartDeviceException
+from kasa import SmartLightStrip
+from kasa_compat import SmartDeviceException
 from nodes import SmartBulbNode
 
 # LightSTrip is the same as bulb

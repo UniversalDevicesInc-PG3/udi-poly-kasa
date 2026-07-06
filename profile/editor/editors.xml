@@ -5,6 +5,14 @@
         <range uom="2" subset="0,1" />
     </editor>
 
+    <editor id="authcnt">
+        <range uom="0" min="0" max="9999" prec="0" step="1" />
+    </editor>
+
+    <editor id="kaserr">
+        <range uom="25" subset="0-7" nls="KERR" />
+    </editor>
+
     <editor id="cst">
       <range uom="25" subset="0,1,2" nls="CST"/>
     </editor>

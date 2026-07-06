@@ -5,7 +5,8 @@
 #
 from udi_interface import Node,LOGGER
 import asyncio
-from kasa import SmartPlug,SmartDeviceException
+from kasa import SmartPlug
+from kasa_compat import SmartDeviceException
 from nodes import SmartDeviceNode
 
 class SmartPlugNode(SmartDeviceNode):

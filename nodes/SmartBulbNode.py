@@ -6,7 +6,8 @@
 from udi_interface import Node,LOGGER
 import asyncio,time
 from concurrent.futures import TimeoutError as FutureTimeoutError
-from kasa import SmartBulb,SmartDeviceException
+from kasa import SmartBulb
+from kasa_compat import SmartDeviceException
 from nodes import SmartDeviceNode
 from converters import color_hsv, color_rgb, bri2st, st2bri, rgb2hsv
 

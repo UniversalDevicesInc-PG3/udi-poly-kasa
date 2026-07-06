@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.3.23] - 2026-07-05
+
+### Added
+
+- **Auth failure notices:** per-device notices now include a consecutive failure count (e.g. `3 consecutive auth failures`) and reset when authentication succeeds.
+- **Auth Fail Count driver (GV1):** each device node exposes consecutive auth failures on GV1; resets to 0 on successful authentication.
+- **Error driver (ERR):** each device node exposes the current error state (uom 25) with labeled indices for auth, credentials, unreachable, communication, discovery, circuit breaker, and unknown failures. Profile **2.1.0.12** places GV1/ERR last in nodedef status lists.
+- **Tests:** auth notice counting and ERR driver classification (`test_auth_notice.py`, `test_device_errors.py`).
+
+### Fixed
+
+- **python-kasa 0.10:** `SmartDeviceException` was renamed to `DeviceError`; added `kasa_compat.py` alias so the plugin starts with the pinned dependency.
+
+### Documentation
+
+- **README:** documented Error index table (UOM 25), Auth Fail Count, and ISY program notes.
+
 ## [3.3.22] - 2026-07-05
 
 ### Fixed

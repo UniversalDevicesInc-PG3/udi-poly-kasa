@@ -31,8 +31,20 @@ CDM-50 = Critical
 # All Devices
 ST-ST-NAME = Status
 ST-GV0-NAME = Connected
+ST-GV1-NAME = Auth Fail Count
+ST-ERR-NAME = Error
 ST-GV6-NAME = Poll Device
 CMD-QUERY_ALL-NAME = Query All
+
+# Device error indices (ERR driver, uom 25)
+KERR-0 = OK
+KERR-1 = Authentication failed
+KERR-2 = Credentials not configured
+KERR-3 = Host unreachable
+KERR-4 = Communication error
+KERR-5 = Discovery failed
+KERR-6 = Host paused (circuit breaker)
+KERR-7 = Unknown error
 
 # Smart Strip
 ND-SmartStrip_N-NAME = Smart Strip

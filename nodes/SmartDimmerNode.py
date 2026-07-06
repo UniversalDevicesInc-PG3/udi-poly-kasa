@@ -5,7 +5,8 @@
 #
 from udi_interface import Node,LOGGER
 import asyncio
-from kasa import SmartPlug,SmartDimmer,SmartDeviceException
+from kasa import SmartPlug, SmartDimmer
+from kasa_compat import SmartDeviceException
 from converters import bri2st,st2bri
 from nodes import SmartDeviceNode
 

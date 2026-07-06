@@ -13,13 +13,13 @@ if str(_ROOT) not in sys.path:
 
 # Stub kasa exception types with real Exception subclasses (MagicMock breaks except).
 _kasa_exc = types.ModuleType('kasa.exceptions')
-for _name in ('AuthenticationError', 'KasaException', 'SmartDeviceException'):
+for _name in ('AuthenticationError', 'KasaException', 'DeviceError'):
     setattr(_kasa_exc, _name, type(_name, (Exception,), {}))
+_kasa_exc.SmartDeviceException = _kasa_exc.DeviceError
 sys.modules['kasa.exceptions'] = _kasa_exc
 
 if 'kasa' not in sys.modules:
     _kasa = MagicMock()
-    _kasa.SmartDeviceException = _kasa_exc.SmartDeviceException
     _kasa.exceptions = _kasa_exc
     sys.modules['kasa'] = _kasa
 
@@ -41,6 +41,7 @@ def make_controller_stub(**overrides):
     ctrl.poly.getNode.return_value = None
     ctrl.nodes_by_mac = {}
     ctrl.Data = {}
+    ctrl._auth_fail_count = {}
     ctrl.set_device_notice = MagicMock()
     ctrl.clear_device_notice = MagicMock()
     for key, value in overrides.items():

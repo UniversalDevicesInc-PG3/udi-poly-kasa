@@ -6,10 +6,13 @@
 import re,asyncio,time
 from concurrent.futures import TimeoutError as FutureTimeoutError
 from udi_interface import Node,LOGGER
-from kasa import SmartDeviceException
+from kasa_compat import SmartDeviceException
 from converters import myround,bri2st,st2bri
 
 class SmartDeviceNode(Node):
+
+    AUTH_FAIL_COUNT_DRIVER = 'GV1'
+    ERR_DRIVER = 'ERR'
 
     @staticmethod
     def _dev_desc(dev):
@@ -72,6 +75,24 @@ class SmartDeviceNode(Node):
             self.drivers.append({'driver': 'CV', 'value': 0, 'uom': 72, 'name': 'Current Voltage'})
             self.drivers.append({'driver': 'CPW', 'value': 0, 'uom': 73, 'name': 'Current Power Watts'})
             self.drivers.append({'driver': 'TPW', 'value': 0, 'uom': 33, 'name': 'Total Energy kWh'})
+        if hasattr(self, 'drivers') and not any(
+            d.get('driver') == self.AUTH_FAIL_COUNT_DRIVER for d in self.drivers
+        ):
+            self.drivers.append({
+                'driver': self.AUTH_FAIL_COUNT_DRIVER,
+                'value': 0,
+                'uom': 0,
+                'name': 'Auth Fail Count',
+            })
+        if hasattr(self, 'drivers') and not any(
+            d.get('driver') == self.ERR_DRIVER for d in self.drivers
+        ):
+            self.drivers.append({
+                'driver': self.ERR_DRIVER,
+                'value': 0,
+                'uom': 25,
+                'name': 'Error',
+            })
         self.cfg['id'] = self.id
         super().__init__(controller.poly, primary, address, name)
         if self.poll:
@@ -451,6 +472,7 @@ class SmartDeviceNode(Node):
                     msg.replace(f"{self.pfx} ", "", 1),
                     source='connect',
                 )
+                self.controller.set_host_device_err_from_connect(self.host, msg)
         # Just return if setting to same status
         if st == self.connected:
             return

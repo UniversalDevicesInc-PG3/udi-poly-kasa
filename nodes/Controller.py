@@ -6,14 +6,24 @@ from threading import Thread,Event
 from concurrent.futures import TimeoutError as FutureTimeoutError
 from node_funcs import get_valid_node_name,get_valid_node_address
 from safe_custom import SafeCustom, redact_sensitive_params
+from device_errors import (
+    ERR_AUTH,
+    ERR_CIRCUIT,
+    ERR_NO_CREDS,
+    ERR_OK,
+    ERR_UNKNOWN,
+    err_code_for_connect_message,
+    err_code_for_kasa_exception,
+)
 import kasa
-from kasa.exceptions import AuthenticationError, KasaException, SmartDeviceException
+from kasa_compat import AuthenticationError, KasaException
 from nodes import SmartStripPlugNode
 from nodes import SmartStripNode
 from nodes import SmartPlugNode
 from nodes import SmartDimmerNode
 from nodes import SmartBulbNode
 from nodes import SmartLightStripNode
+from nodes.SmartDeviceNode import SmartDeviceNode
 
 #logging.getLogger('pyHS100').setLevel(logging.DEBUG)
 
@@ -59,9 +69,9 @@ class Controller(Node):
         self._start_monotonic = time.monotonic()
         # (notice_key, source) -> monotonic timestamp of last write.
         self._notice_last_write = {}
-        # host -> True after the first auth ERROR for that host; further
-        # failures log at DEBUG until a successful update clears the flag.
-        self._auth_fail_logged = {}
+        # host -> consecutive auth failure count; reset on successful update.
+        # First failure logs at ERROR; further failures log at DEBUG.
+        self._auth_fail_count = {}
         # Per-host circuit breaker. Hosts that have failed N times in a row
         # stop being probed by per-node connect_a/discover_single calls until
         # their next_try monotonic time. The longPoll discover sweep still
@@ -726,17 +736,22 @@ class Controller(Node):
             await dev.update()
             ret = True
         except AuthenticationError as msg:
-            notice = self._auth_failure_notice_message(msg)
-            self.set_device_notice(dev, notice, source='auth')
             auth_key = host or 'unknown'
-            log = LOGGER.debug if self._auth_fail_logged.get(auth_key) else LOGGER.error
+            fail_count = self._auth_fail_count.get(auth_key, 0) + 1
+            self._auth_fail_count[auth_key] = fail_count
+            notice = self._auth_failure_notice_message(msg, fail_count)
+            self.set_device_notice(dev, notice, source='auth', refresh=True)
+            self._set_host_auth_fail_count(host, fail_count)
+            err_code = ERR_NO_CREDS if not self._credentials_configured() else ERR_AUTH
+            self._set_host_device_err(host, err_code)
+            log = LOGGER.debug if fail_count > 1 else LOGGER.error
             log(
-                'Failed to authenticate %s (%s): %s',
+                'Failed to authenticate %s (%s) [%s consecutive]: %s',
                 self._device_display_name(dev),
                 host,
+                fail_count,
                 msg,
             )
-            self._auth_fail_logged[auth_key] = True
         except KasaException as ex:
             # KasaException already encodes the actionable bit (e.g. "Host
             # is down", "Timed out") in its message. The traceback is the
@@ -747,6 +762,7 @@ class Controller(Node):
                 f'Update failed: {type(ex).__name__}: {ex}',
                 source='update',
             )
+            self._set_host_device_err(host, err_code_for_kasa_exception(ex))
             log = LOGGER.debug if was_broken else LOGGER.error
             log(f"Failed to update {ex}: {dev}")
         except Exception as ex:
@@ -756,15 +772,22 @@ class Controller(Node):
                 f'Update failed: {type(ex).__name__}: {ex}',
                 source='update',
             )
+            self._set_host_device_err(host, ERR_UNKNOWN)
             if was_broken:
                 LOGGER.debug(f"Failed to update {ex}: {dev}", exc_info=True)
             else:
                 LOGGER.error(f"Failed to update {ex}: {dev}", exc_info=True)
         if ret:
             self.host_record_success(host)
-            if host and host in self._auth_fail_logged:
-                self._auth_fail_logged.pop(host, None)
-                LOGGER.info('host %s authenticated successfully after prior failure', host)
+            if host and host in self._auth_fail_count:
+                prior = self._auth_fail_count.pop(host)
+                LOGGER.info(
+                    'host %s authenticated successfully after %s consecutive failure(s)',
+                    host,
+                    prior,
+                )
+            self._set_host_auth_fail_count(host, 0)
+            self._set_host_device_err(host, ERR_OK)
             self.clear_device_notice(dev)
             if self.change_node_names:
                 identity = self._node_identity_key(dev=dev)
@@ -919,6 +942,50 @@ class Controller(Node):
                 found.append(node)
                 seen.add(node_id)
         return found
+
+    def _set_host_auth_fail_count(self, host, count):
+        """Push consecutive auth-failure count to every IoX node on this host."""
+        if not host:
+            return
+        try:
+            value = int(count)
+        except (TypeError, ValueError):
+            value = 0
+        driver = SmartDeviceNode.AUTH_FAIL_COUNT_DRIVER
+        for node in self._nodes_for_host(host):
+            try:
+                node.setDriver(driver, value)
+            except Exception as ex:
+                LOGGER.debug(
+                    'host %s auth fail count driver update failed: %s',
+                    host,
+                    ex,
+                )
+
+    def _set_host_device_err(self, host, code):
+        """Push the ERR driver index to every IoX node on this host."""
+        if not host:
+            return
+        try:
+            value = int(code)
+        except (TypeError, ValueError):
+            value = ERR_OK
+        driver = SmartDeviceNode.ERR_DRIVER
+        for node in self._nodes_for_host(host):
+            try:
+                node.setDriver(driver, value)
+            except Exception as ex:
+                LOGGER.debug(
+                    'host %s ERR driver update failed: %s',
+                    host,
+                    ex,
+                )
+
+    def set_host_device_err_from_connect(self, host, msg):
+        """Set ERR from a connect-path message when it is more specific."""
+        code = err_code_for_connect_message(msg)
+        if code is not None:
+            self._set_host_device_err(host, code)
 
     def _cfg_for_host(self, host):
         if not host:
@@ -1076,18 +1143,22 @@ class Controller(Node):
             return False
         return not (user.lower() == 'none' and password.lower() == 'none')
 
-    def _auth_failure_notice_message(self, _detail):
+    def _auth_failure_notice_message(self, _detail, fail_count=1):
         """User-facing auth notice; differs for missing vs rejected credentials."""
+        count_label = (
+            f'{fail_count} consecutive auth failure'
+            f'{"" if fail_count == 1 else "s"} — '
+        )
         if not self._credentials_configured():
             return (
-                'Kasa credentials not configured — enter your TP-Link email and '
-                'password in Custom Parameters (both case-sensitive). Use none/none '
-                'only for older local-only devices.'
+                f'{count_label}Kasa credentials not configured — enter your TP-Link '
+                'email and password in Custom Parameters (both case-sensitive). '
+                'Use none/none only for older local-only devices.'
             )
         return (
-            'Authentication failed — device rejected login. Verify the Kasa '
-            'email and password in Custom Parameters (case-sensitive) and '
-            'confirm this device is on the same TP-Link account in the Kasa app.'
+            f'{count_label}device rejected login. Verify the Kasa email and '
+            'password in Custom Parameters (case-sensitive) and confirm this '
+            'device is on the same TP-Link account in the Kasa app.'
         )
 
     def _existing_node_for_dev(self, dev):
@@ -1585,7 +1656,7 @@ class Controller(Node):
         except (IndexError, ValueError):
             return body
 
-    def set_device_notice(self, dev, message, source='state'):
+    def set_device_notice(self, dev, message, source='state', refresh=False):
         """Set a single, timestamped notice per device.
 
         The timestamp reflects first-seen for the current failure body so the
@@ -1628,7 +1699,8 @@ class Controller(Node):
                 and new_label not in (None, '', 'Device')
             )
         if (
-            existing is not None
+            not refresh
+            and existing is not None
             and now - last < self._NOTICE_WRITE_COOLDOWN_SECS
             and not upgrading_generic_label
         ):
@@ -1701,6 +1773,7 @@ class Controller(Node):
                 ),
                 source='connect',
             )
+            self._set_host_device_err(host, ERR_CIRCUIT)
 
     def host_record_success(self, host):
         if host is None:

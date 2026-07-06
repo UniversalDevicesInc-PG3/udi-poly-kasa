@@ -117,6 +117,37 @@ The settings for this node are
 #### Many others
   * Depending on the type of device there will be many other drivers, which should be self explanitary.
 
+#### Error (ERR)
+
+Each Kasa device node exposes an **Error** status (profile name from `ST-ERR-NAME`). The value is an **index** (UOM 25): IoX shows a text label for each number, not the raw integer. This is the same pattern used by other PG3 plugins (for example HomeKit Hub **Error** on its controller). Maintainer notes on authoring index drivers live in the PG3 workspace rule `pg3-isy-index-drivers.mdc`.
+
+The plugin sets **Error** from the device IP/host. All IoX nodes that share that host (for example HS300 parent and outlets) receive the same index. It clears to **OK** on the next successful device update.
+
+| Index | IoX label | Meaning | When set |
+|------:|-----------|---------|----------|
+| 0 | OK | No fault | Successful `update()` / authentication |
+| 1 | Authentication failed | Kasa rejected username/password | `AuthenticationError` while credentials are configured |
+| 2 | Credentials not configured | No Kasa username/password in plugin config | `AuthenticationError` when username or password is missing |
+| 3 | Host unreachable | TCP/connectivity failure | `KasaException` whose message indicates host down or connection refused |
+| 4 | Communication error | Timeout or other Kasa protocol error | Other `KasaException` (including timed out) |
+| 5 | Discovery failed | Could not resolve device on connect | Connect path message contains “unable to discover” |
+| 6 | Host paused (circuit breaker) | Probes temporarily stopped after repeated failures | Per-host failure count reaches circuit-breaker threshold |
+| 7 | Unknown error | Unexpected failure | Any other exception during `update()` |
+
+**Related signals**
+
+- **Auth Fail Count** (GV1): consecutive authentication failures for this host; resets to 0 when auth succeeds. Use for trending; **Error** is the categorical fault state.
+- **Polyglot Notices**: human-readable text for the same events (auth failures include the consecutive count). Notices clear on success; **Error** returns to OK at the same time.
+- **Connected** (GV0): whether the node is considered online in IoX; can be false while **Error** is OK (for example user disabled polling).
+
+**ISY programs** — compare the **Error** status numeric value (0 = healthy). Example condition: Error is not 0, or Error is 1 for auth problems only. Indices are stable; see `device_errors.py` and `tests/test_device_errors.py` in the plugin repo.
+
+Requires profile **2.1.0.12** or newer (run **Install Profile** on the Kasa Controller if **Error** or **Auth Fail Count** do not appear on existing nodes).
+
+#### Auth Fail Count (GV1)
+
+Read-only counter of consecutive authentication failures for the device host. Resets to 0 after a successful update. Pair with **Error** index 1 or 2 for auth troubleshooting.
+
 ### Node Commands
 
 The commands for these nodes
