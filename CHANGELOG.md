@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.3.24] - 2026-07-07
+
+### Fixed
+
+- **HS103 misclassified as strip:** classify strip parents by live kasa outlet children (`dev.children` / `sys_info['children']`) instead of model prefixes; auto-migrate saved misclassified strip nodes (no outlet children in IoX) to plugs on startup. **Upgrade note:** affected devices are removed from IoX and re-added as plugs on the first restart after upgrade (same address; ISY programs referencing the node address are unchanged).
+- **SmartStripNode:** skip `SmartStrip` driver replacement when the live device is not a strip parent.
+
+### Added
+
+- **`strip_models.py`** and **`tests/test_strip_model_detection.py`**.
+
 ## [3.3.23] - 2026-07-05
 
 ### Added

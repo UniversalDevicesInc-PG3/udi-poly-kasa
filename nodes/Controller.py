@@ -17,6 +17,11 @@ from device_errors import (
 )
 import kasa
 from kasa_compat import AuthenticationError, KasaException
+from strip_models import (
+    cfg_is_misclassified_strip,
+    dev_has_strip_children,
+    normalize_model,
+)
 from nodes import SmartStripPlugNode
 from nodes import SmartStripNode
 from nodes import SmartPlugNode
@@ -288,6 +293,10 @@ class Controller(Node):
                 self._purge_stale_misnamed_strip_cfg()
             except Exception:
                 LOGGER.error('_purge_stale_misnamed_strip_cfg failed', exc_info=True)
+            try:
+                self._migrate_misclassified_strip_plugs()
+            except Exception:
+                LOGGER.error('_migrate_misclassified_strip_plugs failed', exc_info=True)
             try:
                 self.discover()
             except Exception:
@@ -1180,22 +1189,66 @@ class Controller(Node):
     def _dev_model(self, dev):
         return str(getattr(dev, 'model', None) or '')
 
-    def _model_looks_like_strip(self, model):
-        model = str(model or '').upper()
-        if not model:
+    def _dev_is_strip_parent(self, dev):
+        return dev_has_strip_children(dev)
+
+    def _cfg_has_strip_child_nodes(self, parent_address):
+        parent_address = (parent_address or '').lower()
+        if not parent_address:
             return False
-        return (
-            model.startswith('HS')
-            or model.startswith('KP3')
-            or 'STRIP' in model
+        candidate_addrs = list(self._strip_child_address_pattern(parent_address))
+        for num in range(1, 7):
+            addr = f'{parent_address}{num:02d}'
+            if addr not in candidate_addrs:
+                candidate_addrs.append(addr)
+        for addr in candidate_addrs:
+            if self.poly.getNode(addr) is not None:
+                return True
+            if self._pg3_node_meta(addr) is not None:
+                return True
+        return False
+
+    def _cfg_is_misclassified_strip(self, cfg):
+        parent_address = self._strip_parent_address_from_cfg(cfg)
+        has_child_nodes = (
+            self._cfg_has_strip_child_nodes(parent_address)
+            if parent_address
+            else False
+        )
+        return cfg_is_misclassified_strip(
+            cfg,
+            self._STRIP_PARENT_TYPES,
+            has_child_nodes=has_child_nodes,
         )
 
-    def _dev_is_strip_parent(self, dev):
-        if dev is None:
-            return False
-        if str(dev.device_type) == 'DeviceType.Strip' or getattr(dev, 'is_strip', False):
-            return True
-        return self._model_looks_like_strip(self._dev_model(dev))
+    def _cfg_as_plug(self, cfg):
+        if not isinstance(cfg, dict):
+            return cfg
+        plug_cfg = dict(cfg)
+        plug_cfg['type'] = 'SmartPlug'
+        model = normalize_model(plug_cfg.get('model'))
+        if model:
+            plug_cfg['model'] = model
+        return plug_cfg
+
+    def _migrate_misclassified_strip_plugs(self):
+        """Rewrite saved strip cfg for plug models and remove bogus SmartStrip nodes."""
+        for key in list(self.Data):
+            cfg = self.get_device_cfg(key)
+            if cfg is None or not self._cfg_is_misclassified_strip(cfg):
+                continue
+            addr = cfg.get('address')
+            if not addr:
+                continue
+            plug_cfg = self._cfg_as_plug(cfg)
+            LOGGER.info(
+                'Migrating misclassified strip cfg %s (%s) model=%s to SmartPlug',
+                plug_cfg.get('name'),
+                addr,
+                plug_cfg.get('model'),
+            )
+            self.remove_device_node(addr, wait_for_pg3=True)
+            self.save_cfg(plug_cfg)
 
     def _normalize_dev_type(self, dev):
         dev_type = str(dev.device_type)
@@ -1263,19 +1316,23 @@ class Controller(Node):
     def _is_strip_parent_cfg(self, cfg):
         if not isinstance(cfg, dict):
             return False
+        if self._cfg_is_misclassified_strip(cfg):
+            return False
         if cfg.get('type') in self._STRIP_PARENT_TYPES:
             return True
-        return self._model_looks_like_strip(cfg.get('model'))
+        return False
 
     @staticmethod
     def _is_misnamed_strip_parent_name(name):
         return not (name or '').strip().lower().startswith('smartstrip')
 
     def _node_is_strip_parent(self, node, cfg=None):
-        if isinstance(node, SmartStripNode):
-            return True
         if cfg is None:
             cfg = getattr(node, 'cfg', None)
+        if cfg and self._cfg_is_misclassified_strip(cfg):
+            return False
+        if isinstance(node, SmartStripNode):
+            return True
         if cfg and self._is_strip_parent_cfg(cfg):
             return True
         node_id = getattr(node, 'id', '') or ''

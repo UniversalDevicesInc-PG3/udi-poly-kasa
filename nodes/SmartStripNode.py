@@ -60,6 +60,9 @@ class SmartStripNode(SmartDeviceNode):
         """Ensure the live python-kasa object is a strip parent device."""
         if self.dev is None:
             return
+        if not self.controller._dev_is_strip_parent(self.dev):
+            self._log_invalid_strip_dev_once()
+            return
         if self._is_parent_strip_device():
             return
         LOGGER.debug(

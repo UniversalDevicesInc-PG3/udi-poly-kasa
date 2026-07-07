@@ -1,6 +1,6 @@
 
 """ Node classes used by the Kasa Node Server. """
-VERSION = "3.3.23"
+VERSION = "3.3.24"
 
 import udi_interface
 #import sys
