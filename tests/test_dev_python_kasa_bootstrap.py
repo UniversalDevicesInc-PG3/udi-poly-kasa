@@ -22,6 +22,12 @@ def test_default_repo_url():
     )
 
 
+def test_default_branch():
+    assert bootstrap.default_branch('') == bootstrap.DEFAULT_BRANCH
+    assert bootstrap.default_branch('H500Hub') == 'H500Hub'
+    assert bootstrap.default_branch(None) == bootstrap.DEFAULT_BRANCH
+
+
 def test_param_enabled():
     assert bootstrap.param_enabled('true') is True
     assert bootstrap.param_enabled('false') is False
@@ -51,14 +57,17 @@ def test_read_write_marker(tmp_path):
     written = bootstrap.write_marker(plugin_dir, {
         'enabled': True,
         'repo': bootstrap.DEFAULT_REPO_URL,
+        'branch': 'H500Hub',
         'head': 'abc123',
     })
     assert written['enabled'] is True
     assert written['head'] == 'abc123'
+    assert written['branch'] == 'H500Hub'
     assert 'updated_at' in written
     loaded = bootstrap.read_marker(plugin_dir)
     assert loaded['enabled'] is True
     assert loaded['repo'] == bootstrap.DEFAULT_REPO_URL
+    assert loaded['branch'] == 'H500Hub'
 
 
 def test_params_require_restart():
@@ -66,13 +75,20 @@ def test_params_require_restart():
     assert bootstrap.params_require_restart(old, False, None) is False
     assert bootstrap.params_require_restart(old, True, bootstrap.DEFAULT_REPO_URL) is True
 
-    old = {'enabled': True, 'repo': bootstrap.DEFAULT_REPO_URL}
+    old = {
+        'enabled': True,
+        'repo': bootstrap.DEFAULT_REPO_URL,
+        'branch': bootstrap.DEFAULT_BRANCH,
+    }
     assert bootstrap.params_require_restart(
         old, True, 'https://github.com/other/python-kasa.git'
     ) is True
     assert bootstrap.params_require_restart(
-        old, True, bootstrap.DEFAULT_REPO_URL
+        old, True, bootstrap.DEFAULT_REPO_URL, branch=bootstrap.DEFAULT_BRANCH
     ) is False
+    assert bootstrap.params_require_restart(
+        old, True, bootstrap.DEFAULT_REPO_URL, branch='H500Hub'
+    ) is True
     assert bootstrap.params_require_restart(old, False, None) is True
 
 
@@ -99,14 +115,22 @@ def test_enable_creates_symlink(mock_git, tmp_path):
     mock_git.return_value = (True, 'deadbeef' * 5, None)
 
     result = bootstrap.apply_dev_python_kasa(
-        plugin_dir, True, repo_url=bootstrap.DEFAULT_REPO_URL
+        plugin_dir,
+        True,
+        repo_url=bootstrap.DEFAULT_REPO_URL,
+        branch='H500Hub',
     )
     assert result['error'] is None
     assert result['changed'] is True
+    assert result['branch'] == 'H500Hub'
     link = tmp_path / bootstrap.SYMLINK_NAME
     assert link.is_symlink()
     assert os.path.realpath(str(link)) == os.path.realpath(str(kasa_pkg))
-    mock_git.assert_called_once()
+    mock_git.assert_called_once_with(
+        bootstrap.clone_dir(plugin_dir),
+        bootstrap.DEFAULT_REPO_URL,
+        branch='H500Hub',
+    )
 
 
 @mock.patch('dev_python_kasa_bootstrap.git_clone_or_pull')
@@ -120,11 +144,13 @@ def test_repo_url_change_reclone(mock_git, tmp_path):
         plugin_dir,
         True,
         repo_url='https://github.com/other/python-kasa.git',
+        branch='feature',
     )
     assert result['error'] is None
     mock_git.assert_called_once_with(
         bootstrap.clone_dir(plugin_dir),
         'https://github.com/other/python-kasa.git',
+        branch='feature',
     )
 
 
@@ -140,7 +166,12 @@ def test_bootstrap_from_marker_skips_when_disabled(mock_apply, tmp_path):
 @mock.patch('dev_python_kasa_bootstrap.apply_dev_python_kasa')
 def test_bootstrap_from_marker_pulls_when_enabled(mock_apply, tmp_path):
     plugin_dir = str(tmp_path)
-    _write_marker(tmp_path, enabled=True, repo=bootstrap.DEFAULT_REPO_URL)
+    _write_marker(
+        tmp_path,
+        enabled=True,
+        repo=bootstrap.DEFAULT_REPO_URL,
+        branch='H500Hub',
+    )
     mock_apply.return_value = {
         'changed': True,
         'head': 'abc',
@@ -148,15 +179,20 @@ def test_bootstrap_from_marker_pulls_when_enabled(mock_apply, tmp_path):
         'error': None,
         'enabled': True,
         'repo': bootstrap.DEFAULT_REPO_URL,
+        'branch': 'H500Hub',
     }
     result = bootstrap.bootstrap_from_marker(plugin_dir)
     assert result['changed'] is True
     mock_apply.assert_called_once_with(
-        plugin_dir, True, repo_url=bootstrap.DEFAULT_REPO_URL
+        plugin_dir,
+        True,
+        repo_url=bootstrap.DEFAULT_REPO_URL,
+        branch='H500Hub',
     )
     marker = bootstrap.read_marker(plugin_dir)
     assert marker['enabled'] is True
     assert marker['head'] == 'abc'
+    assert marker['branch'] == 'H500Hub'
 
 
 @mock.patch('dev_python_kasa_bootstrap._run_git')
@@ -165,6 +201,7 @@ def test_git_clone_or_pull_clone(mock_run_git, tmp_path):
 
     def fake_git(args, cwd=None):
         if args and args[0] == 'clone':
+            assert args[1:4] == ['--branch', 'master', '--single-branch']
             dest.mkdir(parents=True)
             (dest / '.git').mkdir()
             (dest / 'kasa').mkdir()
@@ -174,10 +211,46 @@ def test_git_clone_or_pull_clone(mock_run_git, tmp_path):
         return None, f'unexpected git {args}'
 
     mock_run_git.side_effect = fake_git
-    changed, head, err = bootstrap.git_clone_or_pull(str(dest), bootstrap.DEFAULT_REPO_URL)
+    changed, head, err = bootstrap.git_clone_or_pull(
+        str(dest), bootstrap.DEFAULT_REPO_URL
+    )
     assert err is None
     assert changed is True
     assert head == 'feedface' * 5
+
+
+@mock.patch('dev_python_kasa_bootstrap._run_git')
+def test_git_clone_or_pull_switches_branch(mock_run_git, tmp_path):
+    dest = tmp_path / bootstrap.CLONE_DIR_NAME
+    dest.mkdir()
+    (dest / '.git').mkdir()
+    (dest / 'kasa').mkdir()
+    calls = []
+
+    def fake_git(args, cwd=None):
+        calls.append(list(args))
+        if args == ['config', '--get', 'remote.origin.url']:
+            return bootstrap.DEFAULT_REPO_URL, None
+        if args == ['rev-parse', 'HEAD']:
+            return 'abc123def456', None
+        if args == ['rev-parse', '--abbrev-ref', 'HEAD']:
+            return 'master', None
+        if args == ['fetch', 'origin', 'H500Hub']:
+            return '', None
+        if args == ['checkout', 'H500Hub']:
+            return '', None
+        if args == ['pull', '--ff-only']:
+            return '', None
+        return None, f'unexpected git {args}'
+
+    mock_run_git.side_effect = fake_git
+    changed, head, err = bootstrap.git_clone_or_pull(
+        str(dest), bootstrap.DEFAULT_REPO_URL, branch='H500Hub'
+    )
+    assert err is None
+    assert head == 'abc123def456'
+    assert ['checkout', 'H500Hub'] in calls
+    assert ['pull', '--ff-only'] in calls
 
 
 @mock.patch('dev_python_kasa_bootstrap._run_git')
@@ -192,6 +265,10 @@ def test_git_clone_or_pull_ff_only_error_keeps_head(mock_run_git, tmp_path):
             return bootstrap.DEFAULT_REPO_URL, None
         if args == ['rev-parse', 'HEAD']:
             return 'abc123def456', None
+        if args == ['rev-parse', '--abbrev-ref', 'HEAD']:
+            return 'master', None
+        if args == ['fetch', 'origin', 'master']:
+            return '', None
         if args == ['pull', '--ff-only']:
             return None, 'not possible to fast-forward'
         return None, f'unexpected git {args}'

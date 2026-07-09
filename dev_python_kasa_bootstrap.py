@@ -15,6 +15,7 @@ MARKER_NAME = '.dev_python_kasa.json'
 CLONE_DIR_NAME = 'python-kasa'
 SYMLINK_NAME = 'kasa'
 DEFAULT_REPO_URL = 'https://github.com/jimboca/python-kasa.git'
+DEFAULT_BRANCH = 'master'
 _GIT_CANDIDATES = (
     '/usr/local/bin/git',
     '/usr/bin/git',
@@ -56,6 +57,11 @@ def git_executable():
 def default_repo_url(repo_url=None):
     repo = str(repo_url or '').strip()
     return repo or DEFAULT_REPO_URL
+
+
+def default_branch(branch=None):
+    name = str(branch or '').strip()
+    return name or DEFAULT_BRANCH
 
 
 def param_enabled(value):
@@ -140,15 +146,56 @@ def git_remote_url(repo_dir):
     return out, None
 
 
-def git_clone_or_pull(dest, repo_url):
-    """Clone or fast-forward pull repo_url into dest. Returns (changed, head, error)."""
+def git_current_branch(repo_dir):
+    out, err = _run_git(['rev-parse', '--abbrev-ref', 'HEAD'], cwd=repo_dir)
+    if err:
+        return None, err
+    return out, None
+
+
+def _checkout_branch(repo_dir, branch):
+    """Fetch and check out branch (local or origin/<branch>)."""
+    _, err = _run_git(['fetch', 'origin', branch], cwd=repo_dir)
+    if err:
+        # Fall back to a full fetch when the named ref is missing locally.
+        _, fetch_err = _run_git(['fetch', 'origin'], cwd=repo_dir)
+        if fetch_err:
+            return fetch_err
+
+    current, err = git_current_branch(repo_dir)
+    if err:
+        return err
+    if current == branch:
+        return None
+
+    _, err = _run_git(['checkout', branch], cwd=repo_dir)
+    if not err:
+        return None
+
+    _, err = _run_git(['checkout', '-B', branch, f'origin/{branch}'], cwd=repo_dir)
+    return err
+
+
+def git_clone_or_pull(dest, repo_url, branch=None):
+    """Clone or update repo_url at branch into dest.
+
+    Returns (changed, head, error).
+    """
     repo_url = default_repo_url(repo_url)
+    branch = default_branch(branch)
     if not os.path.isdir(os.path.join(dest, '.git')):
         parent = os.path.dirname(dest)
         os.makedirs(parent, exist_ok=True)
         if os.path.exists(dest):
             shutil.rmtree(dest)
-        _, err = _run_git(['clone', repo_url, dest])
+        _, err = _run_git([
+            'clone',
+            '--branch',
+            branch,
+            '--single-branch',
+            repo_url,
+            dest,
+        ])
         if err:
             return False, None, err
         head, err = git_head(dest)
@@ -159,11 +206,16 @@ def git_clone_or_pull(dest, repo_url):
         return False, None, err
     if current_remote and current_remote.rstrip('/') != repo_url.rstrip('/'):
         shutil.rmtree(dest)
-        return git_clone_or_pull(dest, repo_url)
+        return git_clone_or_pull(dest, repo_url, branch=branch)
 
     before, err = git_head(dest)
     if err:
         return False, None, err
+
+    checkout_err = _checkout_branch(dest, branch)
+    if checkout_err:
+        return False, before, checkout_err
+
     _, err = _run_git(['pull', '--ff-only'], cwd=dest)
     if err:
         return False, before, err
@@ -215,18 +267,20 @@ def disable_dev_python_kasa(plugin_dir):
         'error': None,
         'enabled': False,
         'repo': None,
+        'branch': None,
     }
 
 
-def apply_dev_python_kasa(plugin_dir, enabled, repo_url=None):
+def apply_dev_python_kasa(plugin_dir, enabled, repo_url=None, branch=None):
     """Enable or disable nested python-kasa clone + kasa symlink."""
     enabled = bool(enabled)
     if not enabled:
         return disable_dev_python_kasa(plugin_dir)
 
     repo_url = default_repo_url(repo_url)
+    branch = default_branch(branch)
     dest = clone_dir(plugin_dir)
-    changed, head, err = git_clone_or_pull(dest, repo_url)
+    changed, head, err = git_clone_or_pull(dest, repo_url, branch=branch)
     if err:
         return {
             'changed': False,
@@ -235,6 +289,7 @@ def apply_dev_python_kasa(plugin_dir, enabled, repo_url=None):
             'error': err,
             'enabled': True,
             'repo': repo_url,
+            'branch': branch,
         }
 
     symlink_changed, symlink_err = _ensure_symlink(plugin_dir)
@@ -246,6 +301,7 @@ def apply_dev_python_kasa(plugin_dir, enabled, repo_url=None):
             'error': symlink_err,
             'enabled': True,
             'repo': repo_url,
+            'branch': branch,
         }
 
     action = 'updated' if changed else 'enabled'
@@ -256,6 +312,7 @@ def apply_dev_python_kasa(plugin_dir, enabled, repo_url=None):
         'error': None,
         'enabled': True,
         'repo': repo_url,
+        'branch': branch,
     }
 
 
@@ -270,7 +327,10 @@ def bootstrap_from_marker(plugin_dir):
             'error': None,
         }
     repo_url = default_repo_url(marker.get('repo'))
-    result = apply_dev_python_kasa(plugin_dir, True, repo_url=repo_url)
+    branch = default_branch(marker.get('branch'))
+    result = apply_dev_python_kasa(
+        plugin_dir, True, repo_url=repo_url, branch=branch
+    )
     if result.get('error'):
         LOGGER.error(
             'dev python-kasa bootstrap failed: %s',
@@ -279,36 +339,46 @@ def bootstrap_from_marker(plugin_dir):
         return result
     if result.get('changed'):
         LOGGER.info(
-            'dev python-kasa bootstrap %s at %s',
+            'dev python-kasa bootstrap %s at %s (%s)',
             result.get('action'),
             (result.get('head') or '')[:12],
+            branch,
         )
     write_marker(plugin_dir, {
         'enabled': True,
         'repo': repo_url,
+        'branch': branch,
         'head': result.get('head'),
     })
     return result
 
 
-def params_require_restart(old_marker, enabled, repo_url):
+def params_require_restart(old_marker, enabled, repo_url, branch=None):
     """True when a running process must restart to apply param changes."""
     old_enabled = bool(old_marker.get('enabled'))
     old_repo = default_repo_url(old_marker.get('repo')) if old_enabled else None
     new_repo = default_repo_url(repo_url) if enabled else None
-    return old_enabled != enabled or old_repo != new_repo
+    old_branch = default_branch(old_marker.get('branch')) if old_enabled else None
+    new_branch = default_branch(branch) if enabled else None
+    return (
+        old_enabled != enabled
+        or old_repo != new_repo
+        or old_branch != new_branch
+    )
 
 
-def sync_marker(plugin_dir, enabled, repo_url, result):
+def sync_marker(plugin_dir, enabled, repo_url, result, branch=None):
     if enabled:
         write_marker(plugin_dir, {
             'enabled': True,
             'repo': default_repo_url(repo_url),
+            'branch': default_branch(branch if branch is not None else result.get('branch')),
             'head': result.get('head'),
         })
     else:
         write_marker(plugin_dir, {
             'enabled': False,
             'repo': None,
+            'branch': None,
             'head': None,
         })

@@ -11,6 +11,7 @@ from device_errors import (
     ERR_COMM,
     ERR_DISCOVER,
     ERR_NO_CREDS,
+    ERR_NOT_READY,
     ERR_OK,
     ERR_UNREACHABLE,
     ERR_UNKNOWN,
@@ -34,7 +35,7 @@ def test_err_code_for_kasa_exception_sleeping_camera_shell():
         err_code_for_kasa_exception(
             KasaException('getDeviceInfo not found in {}')
         )
-        == ERR_UNREACHABLE
+        == ERR_NOT_READY
     )
 
 
@@ -68,3 +69,4 @@ def test_err_indices_are_stable():
     assert ERR_DISCOVER == 5
     assert ERR_CIRCUIT == 6
     assert ERR_UNKNOWN == 7
+    assert ERR_NOT_READY == 8

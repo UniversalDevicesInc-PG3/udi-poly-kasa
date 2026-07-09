@@ -12,6 +12,7 @@ from device_errors import (
     ERR_AUTH,
     ERR_CIRCUIT,
     ERR_NO_CREDS,
+    ERR_NOT_READY,
     ERR_OK,
     ERR_UNKNOWN,
     ERR_UNREACHABLE,
@@ -36,6 +37,7 @@ from strip_models import (
 from dev_python_kasa_bootstrap import (
     apply_dev_python_kasa,
     clone_dir,
+    default_branch,
     default_repo_url,
     param_enabled,
     params_require_restart,
@@ -912,7 +914,8 @@ class Controller(Node):
                 or 'not found in {}' in ex_text
             ):
                 self.clear_device_notice(dev)
-                self._set_host_device_err(host, ERR_UNREACHABLE)
+                # LAN reached the host; empty getDeviceInfo is not Host unreachable.
+                self._set_host_device_err(host, ERR_NOT_READY)
                 log = LOGGER.debug if was_broken else LOGGER.warning
                 log(
                     'Hub-deferred camera %s (%s) asleep or not ready on direct LAN: %s',
@@ -4794,13 +4797,14 @@ class Controller(Node):
             return not os.path.islink(link)
         return os.path.lexists(link) or os.path.exists(repo)
 
-    def _dev_python_kasa_notice(self, enabled, repo_url, result):
+    def _dev_python_kasa_notice(self, enabled, repo_url, branch, result):
         if enabled:
             short = (result.get('head') or '')[:12]
             repo = result.get('repo') or repo_url
-            msg = f'Enabled dev python-kasa from {repo}'
+            br = result.get('branch') or branch
+            msg = f'Enabled dev python-kasa from {repo} ({br})'
             if short:
-                msg += f' ({short})'
+                msg += f' @ {short}'
             msg += '; restarting Node Server to load updated library.'
             return msg
         return (
@@ -4812,14 +4816,19 @@ class Controller(Node):
         plugin_dir = self._plugin_dir()
         enabled = param_enabled(self.Parameters.get('dev_python_kasa'))
         repo_url = default_repo_url(self.Parameters.get('dev_python_kasa_repo'))
+        branch = default_branch(self.Parameters.get('dev_python_kasa_branch'))
         old_marker = read_marker(plugin_dir)
-        restart_needed = params_require_restart(old_marker, enabled, repo_url)
+        restart_needed = params_require_restart(
+            old_marker, enabled, repo_url, branch=branch
+        )
         state_mismatch = self._dev_python_kasa_state_mismatch(plugin_dir, enabled)
         if not restart_needed and not state_mismatch:
             return
 
-        result = apply_dev_python_kasa(plugin_dir, enabled, repo_url=repo_url)
-        sync_marker(plugin_dir, enabled, repo_url, result)
+        result = apply_dev_python_kasa(
+            plugin_dir, enabled, repo_url=repo_url, branch=branch
+        )
+        sync_marker(plugin_dir, enabled, repo_url, result, branch=branch)
 
         if result.get('error'):
             self.poly.Notices['dev_python_kasa'] = (
@@ -4829,7 +4838,7 @@ class Controller(Node):
 
         if restart_needed or state_mismatch or result.get('changed'):
             self.poly.Notices['dev_python_kasa'] = self._dev_python_kasa_notice(
-                enabled, repo_url, result
+                enabled, repo_url, branch, result
             )
             self.poly.restart()
 
@@ -4843,6 +4852,7 @@ class Controller(Node):
             "change_node_names": "false",
             "dev_python_kasa": "false",
             "dev_python_kasa_repo": default_repo_url(None),
+            "dev_python_kasa_branch": default_branch(None),
             "discover_timeout": 10,
             "auto_discover": "true",
             'user': '',

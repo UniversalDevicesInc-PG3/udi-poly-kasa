@@ -40,13 +40,17 @@ If some supported devices are not being discovered, you can try to increase this
 
 **Advanced / development only.** When set to `true`, the Node Server clones or updates a nested `python-kasa` git repository inside the plugin directory and creates a `kasa` symlink so unreleased library fixes load instead of the pip-installed package. Default is `false` (use pip `python-kasa` from `requirements.txt`).
 
-Changing this parameter or the repo URL triggers an automatic Node Server restart so the process reloads the library. On each restart while enabled, the plugin runs `git pull --ff-only` before importing kasa.
+Changing this parameter, the repo URL, or the branch triggers an automatic Node Server restart so the process reloads the library. On each restart while enabled, the plugin checks out the configured branch and runs `git pull --ff-only` before importing kasa.
 
 Requires `git` on the PG3 host (typically `/usr/local/bin/git` on FreeBSD) and write access to the plugin directory. The Node Server process often has a minimal `PATH`; the plugin resolves common git locations automatically.
 
 #### `dev_python_kasa_repo`
 
 Git URL for the nested `python-kasa` clone when `dev_python_kasa` is `true`. Default is `https://github.com/jimboca/python-kasa.git`. Leave blank to use that default.
+
+#### `dev_python_kasa_branch`
+
+Git branch to check out when `dev_python_kasa` is `true`. Default is `master`. Example: `H500Hub` for camera/hub work on the jimboca fork. Leave blank to use the default.
 
 ### Custom Typed Configuration Parameters
 
@@ -92,13 +96,13 @@ Tapo cameras (`DeviceType.Camera`) and hubs (`DeviceType.Hub`, e.g. H500) are di
 
 **Hub nodes** manage child cameras paired to the hub. Cameras appear nested under the hub in IoX (each child uses its own camera MAC as the node address; the hub remains the parent node).
 
-If hub-paired **Camera State** (privacy lens) or **Set Notifications** commands fail with a protocol error, the plugin may retry the same command directly on the camera's LAN IP when that address is known.
+If hub-paired **Camera State** (privacy lens) or **Set Notifications** commands fail with a protocol error, or the camera is not yet bound as a live hub child (common for sleeping solar cameras), the plugin may retry the same command directly on the camera's LAN IP when that address is known (`camera_host` or a saved host different from the hub).
 
 **Deduplication:** A powered camera that answers discovery on the LAN *and* is listed under a hub is represented once — as a hub child. When an H500 hub is configured, the plugin skips LAN camera discovery, purges stale standalone camera nodes on restart, and removes duplicate standalone nodes when the hub connects.
 
 **RTSP / external viewing:** IoX does not show video. For VLC or NVR software, configure a **Camera Account** in the Tapo app (per camera → Advanced Settings → Camera Account). python-kasa can build an RTSP URL when those credentials are available; the plugin does not store RTSP URLs in IoX drivers in this release.
 
-**Offline solar cameras:** Hub-child cameras that sleep may show **Connected** = false until they wake; this is expected.
+**Offline solar cameras:** Hub-child cameras that sleep may show **Connected** = false and **Error** = **Not ready** until they wake; this is expected (the host was reached, but device info was empty — not **Host unreachable**).
 
 **Solar cameras (e.g. C675D) and Discover:** Battery/solar models often **do not answer UDP broadcast discovery** even when awake. They may still work by **IP**. Add each camera under **Kasa devices** (host `192.168.x.x`) while the camera is awake in the Tapo app, then restart the node server or run **Discover**. The plugin connects by IP and nests the camera under your H500 hub. Set the **Device name** column (or use `192.168.x.x - TapoName` in the host field) so IoX does not keep a generic `Kasa C675D` label when the first connect happens before Tapo returns the alias.
 

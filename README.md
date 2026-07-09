@@ -63,8 +63,9 @@ Optional custom parameters for testing unreleased [python-kasa](https://github.c
 
 - **`dev_python_kasa`** — `true` / `false` (default `false`). When `true`, clones `python-kasa` under the plugin directory and symlinks `kasa` → `python-kasa/kasa` so imports use the git tree instead of pip.
 - **`dev_python_kasa_repo`** — git URL (default `https://github.com/jimboca/python-kasa.git`).
+- **`dev_python_kasa_branch`** — git branch (default `master`; e.g. `H500Hub`).
 
-Toggling these parameters or changing the repo URL restarts the Node Server automatically. Each restart while enabled runs `git pull --ff-only` before kasa loads. See **CONFIG.md** for setup notes (`git` required, writable plugin directory).
+Toggling these parameters or changing the repo URL/branch restarts the Node Server automatically. Each restart while enabled checks out the branch and runs `git pull --ff-only` before kasa loads. See **CONFIG.md** for setup notes (`git` required, writable plugin directory).
 
 ## Kasa Devices
 
@@ -149,11 +150,12 @@ The plugin sets **Error** from the device IP/host. All IoX nodes that share that
 | 0 | OK | No fault | Successful `update()` / authentication |
 | 1 | Authentication failed | Kasa rejected username/password | `AuthenticationError` while credentials are configured (including hub-deferred cameras that reject the LAN handshake) |
 | 2 | Credentials not configured | No Kasa username/password in plugin config | `AuthenticationError` when username or password is missing |
-| 3 | Host unreachable | TCP/connectivity failure | `KasaException` whose message indicates host down or connection refused; also sleeping hub cameras (`getDeviceInfo not found`) |
+| 3 | Host unreachable | TCP/connectivity failure | `KasaException` whose message indicates host down or connection refused |
 | 4 | Communication error | Timeout or other Kasa protocol error | Other `KasaException` (including timed out) |
 | 5 | Discovery failed | Could not resolve device on connect | Connect path message contains “unable to discover” |
 | 6 | Host paused (circuit breaker) | Probes temporarily stopped after repeated failures | Per-host failure count reaches circuit-breaker threshold |
 | 7 | Unknown error | Unexpected failure | Any other exception during `update()` |
+| 8 | Not ready | Host reached but device info empty | Sleeping / hub-paired cameras returning `getDeviceInfo not found` |
 
 **Related signals**
 
@@ -163,7 +165,7 @@ The plugin sets **Error** from the device IP/host. All IoX nodes that share that
 
 **ISY programs** — compare the **Error** status numeric value (0 = healthy). Example condition: Error is not 0, or Error is 1 for auth problems only. Indices are stable; see `device_errors.py` and `tests/test_device_errors.py` in the plugin repo.
 
-Requires profile **2.1.0.12** or newer (run **Install Profile** on the Kasa Controller if **Error** or **Auth Fail Count** do not appear on existing nodes).
+Requires profile **2.1.0.16** or newer (run **Install Profile** on the Kasa Controller if **Error** or **Auth Fail Count** do not appear on existing nodes, or after adding the **Not ready** index).
 
 #### Auth Fail Count (GV1)
 

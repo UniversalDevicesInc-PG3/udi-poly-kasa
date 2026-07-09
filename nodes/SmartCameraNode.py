@@ -125,7 +125,8 @@ class SmartCameraNode(SmartDeviceNode):
         return ret
 
     async def _resolve_hub_child_dev(self):
-        if not self.hub_child or self.dev is None:
+        """Return the live hub-child device, looking it up even when self.dev is None."""
+        if not self.hub_child:
             return self.dev
         hub_node = self.primary_node
         if hub_node is None:
@@ -149,12 +150,41 @@ class SmartCameraNode(SmartDeviceNode):
                 return child
         return self.dev
 
+    async def _discover_camera_lan_dev(self, *, reason, cause=None):
+        """Direct-LAN discover for hub-child control when hub path is unavailable."""
+        hub_host = getattr(self.primary_node, 'host', None)
+        lan_host = camera_lan_host(cfg=self.cfg, dev=self.dev, hub_host=hub_host)
+        if not lan_host or lan_host == hub_host:
+            if cause is not None:
+                raise cause
+            raise DeviceError(f'{self.pfx} no camera LAN host for {reason}')
+        LOGGER.warning(
+            '%s %s; trying direct LAN at %s',
+            self.pfx,
+            reason,
+            lan_host,
+        )
+        lan_dev = await self.controller.discover_single(host=lan_host)
+        if lan_dev is None:
+            raise DeviceError(
+                f'Camera not reachable at {lan_host} for {reason}'
+            ) from cause
+        await self.controller.update_dev(lan_dev)
+        return lan_dev
+
     async def _set_camera_state_a(self, on):
+        """Write camera privacy state. Raises on failure; never silently no-ops."""
         dev = self.dev
         if self.hub_child:
             dev = await self._resolve_hub_child_dev()
-        if dev is None:
+        if dev is None and self.hub_child:
+            lan_dev = await self._discover_camera_lan_dev(
+                reason='hub child not bound for privacy control',
+            )
+            await lan_dev.set_state(on)
             return
+        if dev is None:
+            raise DeviceError(f'{self.pfx} device not connected for privacy control')
 
         try:
             await dev.set_state(on)
@@ -162,22 +192,10 @@ class SmartCameraNode(SmartDeviceNode):
         except DeviceError as ex:
             if not self.hub_child or not hub_child_control_fallback_eligible(ex):
                 raise
-            hub_host = getattr(self.primary_node, 'host', None)
-            lan_host = camera_lan_host(cfg=self.cfg, dev=dev, hub_host=hub_host)
-            if not lan_host or lan_host == hub_host:
-                raise
-            LOGGER.warning(
-                '%s hub child set_state failed (%s); trying direct LAN at %s',
-                self.pfx,
-                ex,
-                lan_host,
+            lan_dev = await self._discover_camera_lan_dev(
+                reason=f'hub child set_state failed ({ex})',
+                cause=ex,
             )
-            lan_dev = await self.controller.discover_single(host=lan_host)
-            if lan_dev is None:
-                raise DeviceError(
-                    f'Camera not reachable at {lan_host} for direct privacy control'
-                ) from ex
-            await self.controller.update_dev(lan_dev)
             await lan_dev.set_state(on)
 
     async def _set_notifications_a(self, enable):
@@ -185,6 +203,12 @@ class SmartCameraNode(SmartDeviceNode):
         dev = self.dev
         if self.hub_child:
             dev = await self._resolve_hub_child_dev()
+        if dev is None and self.hub_child:
+            lan_dev = await self._discover_camera_lan_dev(
+                reason='hub child not bound for notifications',
+            )
+            await set_camera_notifications_enabled(lan_dev, enable)
+            return
         if dev is None:
             raise DeviceError(f'{self.pfx} device not connected for notifications')
 
@@ -194,29 +218,18 @@ class SmartCameraNode(SmartDeviceNode):
         except DeviceError as ex:
             if not self.hub_child or not hub_child_control_fallback_eligible(ex):
                 raise
-            hub_host = getattr(self.primary_node, 'host', None)
-            lan_host = camera_lan_host(cfg=self.cfg, dev=dev, hub_host=hub_host)
-            if not lan_host or lan_host == hub_host:
-                raise
-            LOGGER.warning(
-                '%s hub child set notifications failed (%s); trying direct LAN at %s',
-                self.pfx,
-                ex,
-                lan_host,
+            lan_dev = await self._discover_camera_lan_dev(
+                reason=f'hub child set notifications failed ({ex})',
+                cause=ex,
             )
-            lan_dev = await self.controller.discover_single(host=lan_host)
-            if lan_dev is None:
-                raise DeviceError(
-                    f'Camera not reachable at {lan_host} for notification control'
-                ) from ex
-            await self.controller.update_dev(lan_dev)
             await set_camera_notifications_enabled(lan_dev, enable)
 
     async def set_notifications_a(self, enable):
         LOGGER.debug('%s enter enable=%s', self.pfx, enable)
         if self.dev is None and not self.hub_child:
-            return
+            raise DeviceError(f'{self.pfx} device not connected for notifications')
         await self._set_notifications_a(bool(enable))
+        # Only update IoX after the device write succeeds.
         self.setDriver('GV4', 1 if enable else 0)
         await self.set_state_a(set_energy=False)
         LOGGER.debug('%s exit', self.pfx)
@@ -227,8 +240,9 @@ class SmartCameraNode(SmartDeviceNode):
     async def set_on_a(self):
         LOGGER.debug(f'{self.pfx} enter')
         if self.dev is None and not self.hub_child:
-            return
+            raise DeviceError(f'{self.pfx} device not connected for privacy control')
         await self._set_camera_state_a(True)
+        # Only update IoX after the device write succeeds.
         self.setDriver('ST', 100)
         await self.set_state_a(set_energy=False)
         LOGGER.debug(f'{self.pfx} exit')
@@ -236,8 +250,9 @@ class SmartCameraNode(SmartDeviceNode):
     async def set_off_a(self):
         LOGGER.debug(f'{self.pfx} enter')
         if self.dev is None and not self.hub_child:
-            return
+            raise DeviceError(f'{self.pfx} device not connected for privacy control')
         await self._set_camera_state_a(False)
+        # Only update IoX after the device write succeeds.
         self.setDriver('ST', 0)
         await self.set_state_a(set_energy=False)
         LOGGER.debug(f'{self.pfx} exit')

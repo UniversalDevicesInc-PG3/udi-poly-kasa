@@ -7,7 +7,7 @@ import json
 from unittest.mock import MagicMock
 
 from conftest import make_controller_stub
-from device_errors import ERR_AUTH, ERR_UNREACHABLE
+from device_errors import ERR_AUTH, ERR_NOT_READY
 from kasa.exceptions import AuthenticationError, KasaException
 from nodes.Controller import Controller
 
@@ -135,10 +135,12 @@ def test_hub_deferred_sleeping_error_clears_stale_auth_notice():
         '[2026-07-07 14:47:16] [auth] Kasa C675D (192.168.1.103): '
         '1 consecutive auth failure — device rejected login.'
     )
+    ctrl._set_host_device_err = MagicMock()
 
     asyncio.get_event_loop().run_until_complete(ctrl.update_dev(dev))
 
     assert key not in ctrl.poly.Notices
+    ctrl._set_host_device_err.assert_called_with('192.168.1.103', ERR_NOT_READY)
 
 
 def test_regular_device_still_gets_auth_notice():

@@ -10,7 +10,7 @@
     </editor>
 
     <editor id="kaserr">
-        <range uom="25" subset="0-7" nls="KERR" />
+        <range uom="25" subset="0-8" nls="KERR" />
     </editor>
 
     <editor id="cst">

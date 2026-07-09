@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.3.29] - 2026-07-09
+
+### Fixed
+
+- **Set Notifications on hub cameras:** hub-child cameras with `dev is None` (common for hub-deferred / solar cams) no longer fail immediately with `device not connected for notifications`. Resolve the child from the hub roster when possible, otherwise fall back to direct LAN using saved `camera_host` / host (same path as privacy control).
+- **Camera On/Off status:** privacy On/Off no longer optimistically sets **Camera State** (`ST`) when the device write did not run (unbound hub child used to return silently then flip `ST`). Drivers update only after a successful write; failures raise like Set Notifications.
+- **Camera Error label:** `getDeviceInfo not found` (asleep / not ready hub cameras) now sets **Error** to **Not ready** (index 8) instead of the misleading **Host unreachable**. Profile **2.1.0.16**.
+
+### Added
+
+- **`dev_python_kasa_branch`:** custom parameter to select the nested `python-kasa` git branch (default `master`). Changing it with `dev_python_kasa` enabled checks out that branch and restarts the Node Server.
+
 ## [3.3.28] - 2026-07-08
 
 ### Removed

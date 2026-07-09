@@ -45,6 +45,7 @@ KERR-4 = Communication error
 KERR-5 = Discovery failed
 KERR-6 = Host paused (circuit breaker)
 KERR-7 = Unknown error
+KERR-8 = Not ready
 
 # Smart Strip
 ND-SmartStrip_N-NAME = Smart Strip

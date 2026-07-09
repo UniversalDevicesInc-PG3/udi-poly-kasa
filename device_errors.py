@@ -8,6 +8,8 @@ ERR_COMM = 4
 ERR_DISCOVER = 5
 ERR_CIRCUIT = 6
 ERR_UNKNOWN = 7
+# Camera/hub child reachable on LAN but getDeviceInfo empty (asleep / not ready).
+ERR_NOT_READY = 8
 
 
 def err_code_for_kasa_exception(ex):
@@ -17,7 +19,8 @@ def err_code_for_kasa_exception(ex):
         return ERR_UNREACHABLE
     if 'getdeviceinfo not found' in text or 'not found in {}' in text:
         # Sleeping solar/hub-paired cameras often return an empty shell.
-        return ERR_UNREACHABLE
+        # Host was reached — do not use ERR_UNREACHABLE (Host unreachable).
+        return ERR_NOT_READY
     if 'timed out' in text or 'timeout' in text:
         return ERR_COMM
     return ERR_COMM
