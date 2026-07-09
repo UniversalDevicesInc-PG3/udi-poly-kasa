@@ -28,10 +28,13 @@ class SmartPlugNode(SmartDeviceNode):
                 self.id += 'D'
             else:
               self.id += 'N'
-            if dev.has_emeter:
+            if SmartDeviceNode._dev_has_emeter(dev):
                 self.id += 'E'
             else:
                 self.id += 'N'
+        else:
+            # Cfg-only restore must keep a valid nodeDefId for PG3 addNode.
+            self.id = (cfg or {}).get('id') or 'SmartPlug_NN'
         super().__init__(controller, primary, address, name, dev, cfg)
 
     def cmd_set_on(self,command):

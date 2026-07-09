@@ -14,6 +14,7 @@ from strip_models import (
     is_auto_misclassified_strip_name,
     is_strip_child_address,
     normalize_model,
+    strip_plug_nodedef_id,
     upgrade_misclassified_plug_cfg,
 )
 
@@ -297,6 +298,15 @@ def test_fix_stale_misclassified_strip_names_hs200():
     assert node.name == 'Hall Dimmer'
 
 
+def test_strip_plug_nodedef_id_from_emeter_and_cfg():
+    assert strip_plug_nodedef_id(has_emeter=True) == 'SmartStripPlug_E'
+    assert strip_plug_nodedef_id(has_emeter=False) == 'SmartStripPlug_N'
+    assert strip_plug_nodedef_id(cfg={'emeter': True}) == 'SmartStripPlug_E'
+    assert strip_plug_nodedef_id(cfg={'id': 'SmartStrip_E'}) == 'SmartStripPlug_E'
+    assert strip_plug_nodedef_id(cfg={'id': 'SmartStripPlug_N'}) == 'SmartStripPlug_N'
+    assert strip_plug_nodedef_id(cfg={}) == 'SmartStripPlug_N'
+
+
 def test_migrate_misclassified_strip_socket_cfg():
     ctrl = _controller()
     addr = '6c5ab06d8c1602'
@@ -307,13 +317,26 @@ def test_migrate_misclassified_strip_socket_cfg():
         'name': 'SmartStrip Socket for HS300US',
         'host': '192.168.1.119',
         'id': 'SmartStrip_E',
+        'emeter': True,
     })
     ctrl.remove_device_node = MagicMock(return_value=True)
     ctrl._migrate_misclassified_strip_socket_cfg()
     ctrl.remove_device_node.assert_called_once_with(addr, wait_for_pg3=True)
     saved = json.loads(ctrl.Data[addr])
     assert saved['type'] == 'DeviceType.StripSocket'
-    assert 'id' not in saved
+    assert saved['id'] == 'SmartStripPlug_E'
+    assert saved['emeter'] is True
+
+
+def test_add_node_refuses_empty_nodedef_id():
+    ctrl = _controller()
+    ctrl.add_node_gap = 0
+    ctrl.wait_for_node_done = MagicMock()
+    node = MagicMock()
+    node.name = 'Broken Outlet'
+    node.id = ''
+    assert ctrl.add_node('6c5ab06d8c1602', node) is None
+    ctrl.poly.addNode.assert_not_called()
 
 
 def test_migrate_skips_real_strip():

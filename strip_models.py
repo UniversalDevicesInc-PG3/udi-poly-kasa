@@ -156,6 +156,24 @@ def is_auto_misclassified_strip_name(name, model=None):
     return normalize_model(tail) == normalize_model(model)
 
 
+def strip_plug_nodedef_id(*, cfg=None, has_emeter=None):
+    """IoX nodedef id for an HS300-style strip outlet (``SmartStripPlug_E`` / ``_N``)."""
+    if isinstance(cfg, dict):
+        existing = str(cfg.get('id') or '')
+        if existing.startswith('SmartStripPlug_'):
+            return existing
+        if has_emeter is None:
+            if 'emeter' in cfg:
+                has_emeter = bool(cfg.get('emeter'))
+            elif existing.endswith('_E'):
+                has_emeter = True
+            elif existing.endswith('_N'):
+                has_emeter = False
+    if has_emeter is None:
+        has_emeter = False
+    return f"SmartStripPlug_{'E' if has_emeter else 'N'}"
+
+
 def cfg_is_misclassified_strip_socket(cfg):
     """Saved cfg for an HS300 outlet using strip-parent type or nodedef."""
     if not isinstance(cfg, dict):

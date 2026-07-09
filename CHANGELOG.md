@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.3.26] - 2026-07-08
+
+### Fixed
+
+- **HS300 outlet re-add after upgrade:** `SmartStripPlugNode` now sets `SmartStripPlug_E` / `_N` from saved cfg when restoring without a live kasa device (same pattern as bulbs/dimmers). Strip-socket migration keeps that id instead of clearing it, and `add_node` refuses empty `nodeDefId` so PG3 no longer gets `addnode` with `nodeDefId=""` (which stalled startup with 30s timeouts per outlet).
+
 ## [3.3.25] - 2026-07-08
 
 ### Added

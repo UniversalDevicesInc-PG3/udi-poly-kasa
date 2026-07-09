@@ -30,6 +30,7 @@ from strip_models import (
     is_auto_misclassified_strip_name,
     is_strip_child_address,
     normalize_model,
+    strip_plug_nodedef_id,
     upgrade_misclassified_plug_cfg,
 )
 from dev_python_kasa_bootstrap import (
@@ -1759,11 +1760,16 @@ class Controller(Node):
                 continue
             socket_cfg = dict(cfg)
             socket_cfg['type'] = 'DeviceType.StripSocket'
-            socket_cfg.pop('id', None)
+            # Keep a valid SmartStripPlug_* id so cfg-only re-add does not
+            # send empty nodeDefId to PG3 (rejected as "No valid API calls").
+            socket_cfg['id'] = strip_plug_nodedef_id(cfg=socket_cfg)
+            if 'emeter' not in socket_cfg:
+                socket_cfg['emeter'] = socket_cfg['id'].endswith('_E')
             LOGGER.info(
-                'Migrating misclassified strip outlet cfg %s (%s) to StripSocket',
+                'Migrating misclassified strip outlet cfg %s (%s) to StripSocket id=%s',
                 socket_cfg.get('name'),
                 addr,
+                socket_cfg['id'],
             )
             self.remove_device_node(addr, wait_for_pg3=True)
             self.save_cfg(socket_cfg)
@@ -4076,6 +4082,15 @@ class Controller(Node):
             self.nodes_by_mac[addr_key] = node
 
     def add_node(self, address, node):
+        node_id = str(getattr(node, 'id', None) or '').strip()
+        if not node_id:
+            LOGGER.error(
+                'Refusing to add node %s (%s): empty nodeDefId '
+                '(PG3 rejects addnode with nodeDefId="")',
+                getattr(node, 'name', None),
+                address,
+            )
+            return None
         LOGGER.debug(f"Adding: {node.name}")
         self.poly.addNode(node)
         self.wait_for_node_done(address)

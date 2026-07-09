@@ -8,6 +8,7 @@ import asyncio
 from kasa import SmartStrip
 from kasa_compat import SmartDeviceException
 from nodes import SmartDeviceNode
+from strip_models import strip_plug_nodedef_id
 
 class SmartStripPlugNode(SmartDeviceNode):
 
@@ -24,13 +25,18 @@ class SmartStripPlugNode(SmartDeviceNode):
             {'driver': 'ST', 'value': 0, 'uom': 51, 'name': 'State'},
             {'driver': 'GV0', 'value': 0, 'uom': 2, 'name': 'Connected'},
         ]
+        if cfg is None:
+            cfg = {}
         if dev is not None:
             # Figure out the id based in the device info
-            self.id = 'SmartStripPlug_'
-            if SmartDeviceNode._dev_has_emeter(dev):
-                self.id += 'E'
-            else:
-                self.id += 'N'
+            has_emeter = SmartDeviceNode._dev_has_emeter(dev)
+            self.id = strip_plug_nodedef_id(has_emeter=has_emeter)
+            cfg['emeter'] = has_emeter
+        else:
+            # Cfg-only restore (startup / rediscover) must still set nodeDefId;
+            # empty id is rejected by PG3 ("No valid API calls provided").
+            self.id = strip_plug_nodedef_id(cfg=cfg)
+            cfg.setdefault('emeter', self.id.endswith('_E'))
         super().__init__(controller, primary, address, name, dev, cfg)
 
     def start(self):
