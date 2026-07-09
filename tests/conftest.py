@@ -33,6 +33,10 @@ def make_controller_stub(**overrides):
     ctrl.add_node_timeout = 1.0
     ctrl._host_state = {}
     ctrl._host_breaker_threshold = 3
+    ctrl.hub_update_coalesce_secs = 25.0
+    ctrl._hub_update_locks = {}
+    ctrl._hub_update_cache = {}
+    ctrl.host_quick_probe_interval = 30.0
     ctrl.manual_networks = []
     ctrl.manual_devices = []
     ctrl.poly = MagicMock()
@@ -40,6 +44,7 @@ def make_controller_stub(**overrides):
     ctrl.poly.getNodes.return_value = []
     ctrl.poly.getNode.return_value = None
     ctrl.nodes_by_mac = {}
+    ctrl._hub_child_identities = set()
     ctrl.Data = {}
     ctrl._auth_fail_count = {}
     ctrl.set_device_notice = MagicMock()

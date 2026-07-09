@@ -90,4 +90,5 @@ python-kasa-broken-backup/
 # Local-only dev artifacts (vendored python-kasa clone + import shim symlink, ad-hoc notes)
 /python-kasa/
 /kasa
+.dev_python_kasa.json
 ISSUES.txt

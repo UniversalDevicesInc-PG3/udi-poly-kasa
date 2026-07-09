@@ -15,6 +15,9 @@ def err_code_for_kasa_exception(ex):
     text = f'{type(ex).__name__}: {ex}'.lower()
     if 'host is down' in text or 'connection refused' in text:
         return ERR_UNREACHABLE
+    if 'getdeviceinfo not found' in text or 'not found in {}' in text:
+        # Sleeping solar/hub-paired cameras often return an empty shell.
+        return ERR_UNREACHABLE
     if 'timed out' in text or 'timeout' in text:
         return ERR_COMM
     return ERR_COMM

@@ -1,6 +1,6 @@
 
 """ Node classes used by the Kasa Node Server. """
-VERSION = "3.3.24"
+VERSION = "3.3.25"
 
 import udi_interface
 #import sys
@@ -13,4 +13,6 @@ from .SmartPlugNode        import SmartPlugNode
 from .SmartDimmerNode      import SmartDimmerNode
 from .SmartBulbNode        import SmartBulbNode
 from .SmartLightStripNode  import SmartLightStripNode
+from .SmartCameraNode      import SmartCameraNode
+from .SmartHubNode         import SmartHubNode
 from .Controller           import Controller

@@ -57,6 +57,15 @@ The node server does not require that you reserve IP addresses for the devices, 
 This defaults to false. When set to true, IoX node names are changed to match the Kasa app alias on first add and after each successful device update (short poll, long poll, and reconnect). HS300 outlet names sync when the parent strip updates.
 Note: there is currently a bug in PG3 so renames during long poll may not persist until the node server is restarted.
 
+#### dev_python_kasa (development)
+
+Optional custom parameters for testing unreleased [python-kasa](https://github.com/python-kasa/python-kasa) camera and hub fixes before they ship on PyPI:
+
+- **`dev_python_kasa`** — `true` / `false` (default `false`). When `true`, clones `python-kasa` under the plugin directory and symlinks `kasa` → `python-kasa/kasa` so imports use the git tree instead of pip.
+- **`dev_python_kasa_repo`** — git URL (default `https://github.com/jimboca/python-kasa.git`).
+
+Toggling these parameters or changing the repo URL restarts the Node Server automatically. Each restart while enabled runs `git pull --ff-only` before kasa loads. See **CONFIG.md** for setup notes (`git` required, writable plugin directory).
+
 ## Kasa Devices
 
 ### Known working
@@ -70,8 +79,20 @@ The known list of supported devices models are:
   - KL120 (US)
   - KL130 (US)
   - KL430 (US) LightStrip
+  - C200, C260 (Tapo cameras)
+  - H500 (Tapo hub with child cameras)
 
 If you have another device not listed and it is working properly please let me know.
+
+### Tapo cameras and hubs
+
+Tapo cameras appear as IoX nodes with **Camera State** (privacy lens on/off), **Connected**, **Motion Detection** (whether motion alerts are armed in the Tapo app — not live motion events), and **Notifications** (Tapo/Kasa app push alerts). Use **Set Notifications** to mute app alerts while the camera keeps recording and detecting. Battery-powered models also expose **Battery Level**. IoX shows them with the **MotionSensor** icon (profile 2.1.0.15+).
+
+- **Standalone cameras** on your LAN are added as top-level nodes.
+- **Hub-paired cameras** (e.g. on an H500) are added as children under the hub node (each camera keeps its own MAC as the IoX address). If the same camera is visible both ways, the plugin keeps the hub-child node and removes the duplicate standalone node.
+- **Solar / sleeping cameras** may show disconnected while offline; they reconnect when they wake.
+
+IoX cannot display video streams. To view RTSP locally, use the Tapo app's **Camera Account** credentials (Advanced Settings) with an external player (VLC, Frigate, etc.). The plugin uses your TP-Link cloud **user** / **password** for device control.
 
 ### Unknown devices
 
@@ -96,7 +117,8 @@ The commands for this node
 #### Query
    * Poll's all devices and sets all status in the ISY
 #### Discover
-   * Run's the auto-discover to find your devices
+   * Runs discovery to find Kasa/Tapo devices on configured networks
+   * Posts a Polyglot notice when discovery starts, updates it when finished, and clears that notice on the next long poll
 #### Install Profile
    * This uploads the current profile into the ISY.
    * Typically this is not necessary, but sometimes the ISY needs the profile uploaded twice.
@@ -126,9 +148,9 @@ The plugin sets **Error** from the device IP/host. All IoX nodes that share that
 | Index | IoX label | Meaning | When set |
 |------:|-----------|---------|----------|
 | 0 | OK | No fault | Successful `update()` / authentication |
-| 1 | Authentication failed | Kasa rejected username/password | `AuthenticationError` while credentials are configured |
+| 1 | Authentication failed | Kasa rejected username/password | `AuthenticationError` while credentials are configured (including hub-deferred cameras that reject the LAN handshake) |
 | 2 | Credentials not configured | No Kasa username/password in plugin config | `AuthenticationError` when username or password is missing |
-| 3 | Host unreachable | TCP/connectivity failure | `KasaException` whose message indicates host down or connection refused |
+| 3 | Host unreachable | TCP/connectivity failure | `KasaException` whose message indicates host down or connection refused; also sleeping hub cameras (`getDeviceInfo not found`) |
 | 4 | Communication error | Timeout or other Kasa protocol error | Other `KasaException` (including timed out) |
 | 5 | Discovery failed | Could not resolve device on connect | Connect path message contains “unable to discover” |
 | 6 | Host paused (circuit breaker) | Probes temporarily stopped after repeated failures | Per-host failure count reaches circuit-breaker threshold |

@@ -43,6 +43,13 @@ class SmartDeviceNode(Node):
         except Exception as ex:
             return f'<device {host} ({type(ex).__name__}: {ex})>'
 
+    @staticmethod
+    def _dev_has_emeter(dev):
+        try:
+            return bool(dev.has_emeter)
+        except Exception:
+            return False
+
     def __init__(self, controller, primary, address, name, dev=None, cfg=None):
         self.controller = controller
         self.name = name
@@ -70,7 +77,7 @@ class SmartDeviceNode(Node):
         self.error_connect = False
         self.connected = None # So start will force setting proper status
         LOGGER.debug(f'{self.pfx} controller={controller} address={address} name={name} host={self.host} id={self.id} dev={self._dev_desc(self.dev)} cfg={self.cfg}')
-        if (not self.dev is None and self.dev.has_emeter) or (not self.cfg is None and 'emeter' in self.cfg and self.cfg['emeter']):
+        if (not self.dev is None and self._dev_has_emeter(self.dev)) or (not self.cfg is None and 'emeter' in self.cfg and self.cfg['emeter']):
             self.drivers.append({'driver': 'CC', 'value': 0, 'uom': 1, 'name': 'Current Current'})
             self.drivers.append({'driver': 'CV', 'value': 0, 'uom': 72, 'name': 'Current Voltage'})
             self.drivers.append({'driver': 'CPW', 'value': 0, 'uom': 73, 'name': 'Current Power Watts'})
@@ -130,7 +137,16 @@ class SmartDeviceNode(Node):
             self.shortPoll()
 
     def handler_delete(self):
-        LOGGER.warning(f'{self.pfx} address={self.adress}')
+        LOGGER.warning('%s address=%s deleted in IoX', self.pfx, self.address)
+        try:
+            self.controller.on_node_deleted(self)
+        except Exception:
+            LOGGER.error(
+                '%s on_node_deleted failed for %s',
+                self.pfx,
+                self.address,
+                exc_info=True,
+            )
 
     def _run_coro(self, coro, label, timeout=None, default=None):
         """Run an asyncio coroutine on the controller mainloop, time it, and
@@ -213,6 +229,9 @@ class SmartDeviceNode(Node):
         finally:
             self.in_short_poll = False
 
+    def _quick_probe_port(self):
+        return self.controller.host_quick_probe_port
+
     async def _shortPoll_a(self):
         if not self.ready:
             LOGGER.warning(f'{self.pfx} Not ready, skipping')
@@ -227,7 +246,9 @@ class SmartDeviceNode(Node):
             # and we fall through to connect_a; on dead, return silently
             # (no per-poll spam).
             if self.controller.host_should_quick_probe(self.host):
-                if not await self.controller.host_quick_probe(self.host):
+                if not await self.controller.host_quick_probe(
+                    self.host, port=self._quick_probe_port()
+                ):
                     LOGGER.debug(f'{self.pfx} quick-probe says down, skipping')
                     return
                 LOGGER.debug(

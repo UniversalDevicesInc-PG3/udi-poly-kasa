@@ -13,6 +13,7 @@ from nodes.Controller import Controller
 class _AuthDev:
     host = '192.168.1.50'
     alias = 'Test Plug'
+    device_type = 'DeviceType.Plug'
 
     def __init__(self, fail_times=1):
         self._fail_times = fail_times

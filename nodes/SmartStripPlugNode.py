@@ -27,7 +27,7 @@ class SmartStripPlugNode(SmartDeviceNode):
         if dev is not None:
             # Figure out the id based in the device info
             self.id = 'SmartStripPlug_'
-            if dev.has_emeter:
+            if SmartDeviceNode._dev_has_emeter(dev):
                 self.id += 'E'
             else:
                 self.id += 'N'

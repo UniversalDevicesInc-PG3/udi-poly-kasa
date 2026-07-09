@@ -164,19 +164,31 @@ class SmartStripNode(SmartDeviceNode):
             naddress = "{}{:02d}".format(self.address,pnum+1)
             nname    = self.dev.children[pnum].alias
             LOGGER.info(f"{self.pfx} adding plug num={pnum} address={naddress} name={nname}")
-            node = self.controller.add_device_node(parent=self, address_suffix_num=pnum+1, dev=self.dev.children[pnum])
+            node = self.controller.add_device_node(
+                parent=self, address_suffix_num=pnum + 1, dev=self.dev.children[pnum],
+            )
             if node in (False, None):
-                LOGGER.error(f'{self.pfx} Failed to add node num={pnum} address={naddress} name={nname}')
+                LOGGER.error(
+                    f'{self.pfx} Failed to add node num={pnum} '
+                    f'address={naddress} name={nname}',
+                )
             elif node is self or not self._is_strip_plug_child(node):
                 LOGGER.error(
-                    "%s Ignoring unexpected child node for %s: address=%s type=%s id=%s",
+                    "%s Ignoring unexpected child node for %s: address=%s "
+                    "type=%s id=%s",
                     self.pfx,
                     nname,
                     getattr(node, 'address', None),
                     type(node).__name__,
                     getattr(node, 'id', None),
                 )
-            else:
+                if self.controller.remove_device_node(naddress, wait_for_pg3=True):
+                    node = self.controller.add_device_node(
+                        parent=self,
+                        address_suffix_num=pnum + 1,
+                        dev=self.dev.children[pnum],
+                    )
+            if node not in (False, None, self) and self._is_strip_plug_child(node):
                 child_nodes.append(node)
         self.child_nodes = child_nodes
 

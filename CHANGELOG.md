@@ -7,6 +7,47 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.3.25] - 2026-07-08
+
+### Added
+
+- **Tapo camera support:** `DeviceType.Camera` devices (e.g. C200, C260, C675D) are added as IoX nodes with **Camera State** (lens privacy on/off), **Connected**, **Motion Detection** (armed config), **Notifications** (Tapo app push alerts), and standard error/auth drivers. Profile **2.1.0.15** ships `SmartCamera_N` / `SmartCamera_B` (battery) with **Set Notifications** (mute app alerts while recording continues).
+- **Tapo hub support (H500):** `DeviceType.Hub` adds a hub parent node and child camera nodes under the hub (same pattern as HS300 strip outlets). Standalone LAN-discovered cameras that are also hub-paired are deduplicated — hub children win; standalone duplicates are migrated on hub connect.
+- **Smartcam TCP probe:** camera and hub nodes use port 443 for the cheap circuit-breaker reconnect probe (Tapo devices do not listen on legacy Kasa port 9999).
+- **Discover status notice:** starting Discover (controller command, startup, or auto-discover) posts a Polyglot notice; it updates to **Discovery finished** when done and clears on the next long poll.
+- **Dev python-kasa parameters:** `dev_python_kasa` and `dev_python_kasa_repo` custom parameters clone a nested `python-kasa` git repo, symlink `kasa` for imports, run `git pull` on each Node Server start, and auto-restart when the setting or repo URL changes. `install.sh` preserves the clone when dev mode is enabled. Resolves `git` from `/usr/local/bin` when PG3's minimal PATH omits it.
+- **Tests:** camera identity, dedup, naming, delete cleanup, hub control, notifications, discover notice, hub deferred auth, hub update coalesce, tapo cloud roster, and `add_device_node` dispatch (`test_camera_*.py` and related).
+
+### Changed
+
+- **Tapo camera IoX icon:** `SmartCamera_N` and `SmartCamera_B` nodedefs use **MotionSensor** instead of the undocumented `Camera` icon (profile **2.1.0.14**+).
+- **Hub-child camera addresses:** hub-paired cameras now use each camera's own MAC as the IoX node address (same as standalone cameras) instead of `{hub_mac}{01}` suffixes. Nesting under the H500 hub is unchanged (`primaryNode` = hub address). Delete any existing hub-suffix camera nodes in IoX and run **Discover** to re-add them.
+- **Hub-child camera names:** preserve Tapo aliases from discovery buffers, saved cfg, and IoX when re-adding at a new MAC address; replace stale auto-generated `Kasa {model}` IoX names on startup.
+- **Solar/hub camera naming:** when a camera is added before `update()` returns its Tapo alias (common for C675D by IP), resolve names from **Kasa devices** manual rows, the hub `child_device_list` nickname, and successful later updates; rename stale `Kasa {model}` nodes on startup and hub reconnect. Duplicate customdata keys for the same camera (address vs `device_id`) are merged on load and `save_cfg` no longer overwrites a known Tapo alias with generic `Kasa {model}`. Tapo aliases learned from hub child lists or successful renames are persisted in customdata (`_camera_aliases`) so sleeping solar cameras keep names like **CamOutBackSouth** across Node Server restarts; hub reconnect now refreshes child-list aliases after `update()` before renaming. PG3 customdata reloads no longer drop learned aliases or revert upgraded camera cfg when a stale snapshot arrives; hub polls and hub-deferred camera connects also refresh child-list nicknames before renaming.
+- **Tapo cloud hub roster:** when an H500 reports paired cameras (`child_num`) but LAN `getChildDeviceList` is empty, query TP-Link cloud `getDeviceList` (same flow as python-kasa `devtools/cloud_tapo_device_list.py`) to seed hub-child camera names, MACs, and deferred adoption for sleeping solar cameras. Refreshes on startup, hub reconnect, and discover (rate-limited). Optional `tapo_cloud_insecure_tls` custom parameter for TLS verification issues on some hosts.
+- **Hub-child camera privacy / notifications control:** when hub `controlChild` lens-mask or notification writes fail with `PROTOCOL_FORMAT_ERROR`, retry direct LAN control using the camera's saved `camera_host` / child `ipaddr`.
+
+### Fixed
+
+- **Misclassified strip names:** after correcting device type (e.g. HS200 dimmer still labeled `SmartStrip HS200`), rename IoX nodes and saved cfg away from auto-generated `SmartStrip {model}` labels using the live Kasa alias on startup.
+- **Hub-deferred camera auth Error:** direct-LAN `AuthenticationError` on hub-paired cameras (e.g. challenge mismatch) now sets **Error** to **Authentication failed** instead of the misleading **Host unreachable**. Sleeping/`getDeviceInfo not found` still uses **Host unreachable**.
+- **Camera delete clears customdata:** deleting a camera in IoX now removes all related customdata rows (including duplicate `device_id` / address keys), matching `_camera_aliases` tokens, hub-child identity tokens, and host notices — not only the IoX node.
+- **Stale camera customdata:** when the same hub camera has multiple customdata rows (legacy short `device_id` plus newer cloud `device_id`, or address vs `device_id` keys), load/`save_cfg` now prefer the longer cloud-style `device_id`, delete superseded keys, and prune matching `_camera_aliases` tokens so rediscover no longer re-adds the old identity.
+- **Camera State display:** report **Camera State** (`ST`) with UOM **78** (On/Off) to match the profile `onoff` editor instead of UOM 51 (percentage). **Motion Detection** now uses boolean `0`/`1` on UOM 2.
+- **Solar hub cameras (C675D):** persist hub-child cfg when the node is added (not only after a successful poll), restore IoX orphan hub cameras after restart, infer `SmartCamera_B` from model when `update()` has not completed, treat `getDeviceInfo not found` as offline/sleeping, still adopt manual-IP cameras when direct `update()` fails, and stop surfacing misleading direct-LAN auth notices for hub-deferred cameras (clear stale auth notices on startup).
+- **Restart loop on startup:** clearing stale hub-deferred auth notices no longer crashes when a notice key is absent (`Custom.Notices` returns `None` instead of raising `KeyError`).
+- **Tapo H500 hub:** monkey-patch python-kasa child-list handling (`child_component_list` / paginated responses) so hub discovery no longer crashes with `StopIteration` or `KeyError`.
+- **Tapo H500 hub polling:** coalesce hub `dev.update()` calls so shortPoll and hub-child cameras share one query per cycle; skip shortPoll while the hub is circuit-broken; treat kasa protocol timeouts separately from TCP liveness so a wedged H500 is not hammered every 30s; defer hub-child direct-LAN fallbacks while hub protocol is failing.
+- **Hub-child camera re-add after IoX delete:** startup discover no longer crashes on saved camera cfg missing `address` (uses MAC); always drains queued hub/device adds even when discover errors; hub-child cameras deleted in IoX are seeded for cloud/deferred hub adoption again instead of being permanently blocked.
+- **Hub-managed cameras:** when a Tapo hub (H500) is saved or discovered, skip and purge standalone LAN camera cfg/nodes so hub-paired C200/C260 devices are only added as hub children.
+- **HS300 strip outlets:** HS300 outlet kasa devices inherit the parent model, so 3.3.24+ could add them as `SmartStrip` parents (`SmartStrip_E`) instead of `SmartStripPlug` children. Startup migration rewrites saved outlet cfg, cleanup removes wrong nodedefs at `{parent}01`..`06`, and `add_children` now forces `DeviceType.StripSocket` under a strip parent.
+- **HS300 misclassified as SmartPlug:** rediscover and restart now promote saved `SmartPlug` cfg for multi-outlet strip models (for example HS300, KP303) back to `DeviceType.Strip` / `SmartStrip` nodes, and no longer downgrade HS300 strip cfg when outlet IoX nodes are temporarily missing.
+- **Camera auth notices:** `-40211` failures surface Tapo third-party compatibility and cloud-account guidance in IoX notices.
+
+### Documentation
+
+- **README / CONFIG:** Tapo camera and hub setup, RTSP viewing notes, camera local account for external viewers, **Notifications** / **Set Notifications**, Discover status notice, and `dev_python_kasa` parameters.
+
 ## [3.3.24] - 2026-07-07
 
 ### Fixed

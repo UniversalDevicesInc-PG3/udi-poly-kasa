@@ -801,4 +801,81 @@
         </cmds>
     </nodeDef>
 
+    <nodeDef id="SmartCamera_N" nls="scam">
+        <editors />
+        <sts>
+            <st id="ST" editor="onoff" />
+            <st id="GV0" editor="bool" />
+            <st id="GV2" editor="bool" />
+            <st id="GV4" editor="bool" />
+            <st id="GV6" editor="bool" />
+            <st id="GV1" editor="authcnt" />
+            <st id="ERR" editor="kaserr" />
+        </sts>
+        <cmds>
+            <sends />
+            <accepts>
+                <cmd id="DON" />
+                <cmd id="DOF" />
+                <cmd id="QUERY" />
+                <cmd id="QUERY_ALL" />
+                <cmd id="SET_MON">
+                    <p id="" editor="bool" init="GV6" />
+                </cmd>
+                <cmd id="SET_NOTIFICATIONS">
+                    <p id="" editor="bool" init="GV4" />
+                </cmd>
+            </accepts>
+        </cmds>
+    </nodeDef>
+
+    <nodeDef id="SmartCamera_B" nls="scam">
+        <editors />
+        <sts>
+            <st id="ST" editor="onoff" />
+            <st id="GV0" editor="bool" />
+            <st id="GV2" editor="bool" />
+            <st id="GV3" editor="raw" />
+            <st id="GV4" editor="bool" />
+            <st id="GV6" editor="bool" />
+            <st id="GV1" editor="authcnt" />
+            <st id="ERR" editor="kaserr" />
+        </sts>
+        <cmds>
+            <sends />
+            <accepts>
+                <cmd id="DON" />
+                <cmd id="DOF" />
+                <cmd id="QUERY" />
+                <cmd id="QUERY_ALL" />
+                <cmd id="SET_MON">
+                    <p id="" editor="bool" init="GV6" />
+                </cmd>
+                <cmd id="SET_NOTIFICATIONS">
+                    <p id="" editor="bool" init="GV4" />
+                </cmd>
+            </accepts>
+        </cmds>
+    </nodeDef>
+
+    <nodeDef id="SmartHub_N" nls="shub">
+        <editors />
+        <sts>
+            <st id="GV0" editor="bool" />
+            <st id="GV6" editor="bool" />
+            <st id="GV1" editor="authcnt" />
+            <st id="ERR" editor="kaserr" />
+        </sts>
+        <cmds>
+            <sends />
+            <accepts>
+                <cmd id="QUERY" />
+                <cmd id="QUERY_ALL" />
+                <cmd id="SET_MON">
+                    <p id="" editor="bool" init="GV6" />
+                </cmd>
+            </accepts>
+        </cmds>
+    </nodeDef>
+
 </nodeDefs>

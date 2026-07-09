@@ -57,6 +57,27 @@ ND-SmartStripPlug_N-ICON = GenericCtl
 ND-SmartStripPlug_E-NAME = Smart Strip Plug Energy
 ND-SmartStripPlug_E-ICON = GenericCtl
 
+# Tapo Cameras and Hub
+ND-SmartCamera_N-NAME = Tapo Camera
+ND-SmartCamera_N-ICON = MotionSensor
+ND-SmartCamera_B-NAME = Tapo Camera Battery
+ND-SmartCamera_B-ICON = MotionSensor
+ND-SmartHub_N-NAME = Tapo Hub
+ND-SmartHub_N-ICON = GenericCtl
+ST-scam-ST-NAME = Camera State
+ST-scam-GV2-NAME = Motion Detection
+ST-scam-GV3-NAME = Battery Level
+ST-scam-GV4-NAME = Notifications
+CMD-scam-DON-NAME = Camera On
+CMD-scam-DOF-NAME = Camera Off
+CMD-scam-QUERY-NAME = Query
+CMD-scam-QUERY_ALL-NAME = Query All
+CMD-scam-SET_MON-NAME = Set Poll
+CMD-scam-SET_NOTIFICATIONS-NAME = Set Notifications
+CMD-shub-QUERY-NAME = Query
+CMD-shub-QUERY_ALL-NAME = Query All
+CMD-shub-SET_MON-NAME = Set Poll
+
 # SmartPlugs
 ND-SmartPlug_NN-NAME = SmartPlug
 ND-SmartPlug_NE-NAME = SmartPlug Energy

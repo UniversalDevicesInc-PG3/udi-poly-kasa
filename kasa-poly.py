@@ -6,10 +6,18 @@ by JimBo jimboca3@gmail.com
 
 import asyncio
 import logging
+import os
 import sys
-from udi_interface import Interface,LOGGER
 import time
 import warnings
+
+_PLUGIN_DIR = os.path.dirname(os.path.abspath(__file__))
+from dev_python_kasa_bootstrap import bootstrap_from_marker
+bootstrap_from_marker(_PLUGIN_DIR)
+
+from udi_interface import Interface, LOGGER
+from kasa_compat import apply_kasa_patches
+apply_kasa_patches()
 from nodes import VERSION,Controller
 
 def main():

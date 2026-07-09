@@ -29,6 +29,15 @@ def test_err_code_for_kasa_exception_timeout():
     assert err_code_for_kasa_exception(KasaException('Timed out waiting')) == ERR_COMM
 
 
+def test_err_code_for_kasa_exception_sleeping_camera_shell():
+    assert (
+        err_code_for_kasa_exception(
+            KasaException('getDeviceInfo not found in {}')
+        )
+        == ERR_UNREACHABLE
+    )
+
+
 def test_err_code_for_connect_message_discover():
     assert err_code_for_connect_message('Unable to discover 192.168.1.5') == ERR_DISCOVER
     assert err_code_for_connect_message('failed updating, see log') is None
