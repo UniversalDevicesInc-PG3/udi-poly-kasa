@@ -241,6 +241,10 @@ class Controller(Node):
         address = getattr(node, 'address', None)
         if address is None or address == self.address:
             return
+        # Strip outlets are driven by the parent SmartStrip; they have no
+        # independent LAN connect path and must not use Controller as primary.
+        if str(getattr(node, 'id', '') or '').startswith('SmartStripPlug_'):
+            return
         if address not in self.startup_connect_queue:
             self.startup_connect_queue.append(address)
 
@@ -1820,6 +1824,31 @@ class Controller(Node):
     def _is_strip_plug_node(self, node):
         return getattr(node, 'id', '').startswith('SmartStripPlug_')
 
+    def _strip_parent_node_for_socket_cfg(self, cfg):
+        """Return the SmartStrip parent for a strip-outlet cfg, if present."""
+        if not isinstance(cfg, dict):
+            return None
+        address = str(cfg.get('address') or '').lower()
+        if not is_strip_child_address(address):
+            return None
+        parent = self.poly.getNode(address[:-2])
+        if parent is None or not self._node_is_strip_parent(parent):
+            return None
+        return parent
+
+    def _bind_strip_plug_session_node(self, existing, *, parent=None, dev=None):
+        """Rebind a cfg-restored strip outlet to its live child device / parent."""
+        if existing is None:
+            return existing
+        if not self._is_strip_plug_node(existing):
+            return existing
+        if dev is not None:
+            existing.dev = dev
+        if parent is not None and parent is not self:
+            existing.primary_node = parent
+            existing.pfx = f"{getattr(parent, 'name', parent.address)}:{existing.name}:"
+        return existing
+
     def _strip_parent_address_from_cfg(self, cfg):
         addr = cfg.get('address')
         if addr:
@@ -3134,6 +3163,15 @@ class Controller(Node):
             hub_node = self.poly.getNode(hub_parent)
             if hub_node is not None:
                 parent = hub_node
+        elif cfg and cfg.get('type') in ('SmartStripPlug', 'DeviceType.StripSocket'):
+            strip_parent = self._strip_parent_node_for_socket_cfg(cfg)
+            if strip_parent is None:
+                LOGGER.info(
+                    'Deferring strip outlet %s until strip parent is available',
+                    cfg.get('address') or cfg.get('name'),
+                )
+                return
+            parent = strip_parent
         self.queue_device_add(parent=parent, cfg=cfg)
 
     def _upgrade_hub_child_cfg_name(self, cfg):
@@ -3589,6 +3627,15 @@ class Controller(Node):
                     cfg.get('name') or key,
                 )
                 continue
+            # HS300 outlets are children of the strip parent. Restoring them
+            # as top-level nodes parents them under the controller (no
+            # is_connected) and leaves node.dev unbound until add_children.
+            if cfg.get('type') in ('SmartStripPlug', 'DeviceType.StripSocket'):
+                LOGGER.debug(
+                    'skipping saved strip outlet %s; parent strip add_children handles it',
+                    cfg.get('name') or key,
+                )
+                continue
             address = self._cfg_iox_address(cfg)
             if not address:
                 LOGGER.debug('saved cfg has no IoX address, skipping key=%s', key)
@@ -3863,6 +3910,19 @@ class Controller(Node):
             hub_node = self.poly.getNode(cfg['hub_parent'])
             if hub_node is not None:
                 parent = hub_node
+        elif (
+            cfg is not None
+            and cfg.get('type') in ('SmartStripPlug', 'DeviceType.StripSocket')
+            and parent is self
+        ):
+            strip_parent = self._strip_parent_node_for_socket_cfg(cfg)
+            if strip_parent is None:
+                LOGGER.info(
+                    'Deferring strip outlet %s until strip parent is available',
+                    cfg.get('address') or cfg.get('name'),
+                )
+                return False
+            parent = strip_parent
         if cfg is not None and cfg.get('hub_deferred'):
             hub_deferred = True
         if dev is not None:
@@ -3960,7 +4020,11 @@ class Controller(Node):
                 f"Device already added this session type={cfg['type']} "
                 f"address={cfg['address']} name='{cfg['name']}'"
             )
-            return existing
+            # Cfg-only restore can leave strip outlets with dev=None and the
+            # controller as primary; rebind when the parent strip re-adds.
+            return self._bind_strip_plug_session_node(
+                existing, parent=parent, dev=dev,
+            )
         LOGGER.info(f"adding type={cfg['type']} address={cfg['address']} name='{cfg['name']}' ")
         #
         # Add Based on device type.  SmartStrip is a unique type, all others

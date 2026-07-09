@@ -448,6 +448,9 @@ class SmartDeviceNode(Node):
             await self._set_energy_a()
 
     async def _set_energy_a(self):
+        if self.dev is None:
+            LOGGER.debug(f'{self.pfx} no energy (dev is None)')
+            return
         if self.dev.has_emeter:
             try:
                 energy = self.dev.emeter_realtime

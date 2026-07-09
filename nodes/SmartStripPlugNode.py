@@ -58,12 +58,19 @@ class SmartStripPlugNode(SmartDeviceNode):
         # This doesn't call set_energy, since that is only called on long_poll's
         # We don't use self.connected here because dev might be good, but device is unplugged
         # So then when it's plugged back in the same dev will still work
-        if await self.primary_node.update_a():
+        primary = self.primary_node
+        if primary is None or not hasattr(primary, 'update_a'):
+            LOGGER.debug(f'{self.pfx} set_state_a skipped: strip parent not ready')
+            return
+        if await primary.update_a():
             LOGGER.debug(f'after parent update: dev={self.dev}')
             await self.set_drivers_a(set_energy=set_energy)
         LOGGER.debug(f'exit:  dev={self.dev}')
 
     async def set_drivers_a(self,set_energy=True):
+        if self.dev is None:
+            LOGGER.debug(f'{self.pfx} set_drivers_a skipped: no live child device yet')
+            return
         if self.dev.is_on is True:
             self.brightness = 100
             LOGGER.debug(f'{self.pfx} setDriver(ST,100)')
@@ -99,8 +106,11 @@ class SmartStripPlugNode(SmartDeviceNode):
         LOGGER.debug(f'exit: {self.dev}')
 
     def is_connected(self):
-        return self.primary_node.is_connected()
-        
+        primary = self.primary_node
+        if primary is None or not hasattr(primary, 'is_connected'):
+            return False
+        return primary.is_connected()
+
     commands = {
         'DON': cmd_set_on,
         'DOF': cmd_set_off,

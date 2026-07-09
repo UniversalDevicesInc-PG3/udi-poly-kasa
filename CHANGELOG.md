@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.3.27] - 2026-07-08
+
+### Fixed
+
+- **HS300 strip outlets parented under Controller:** saved strip-socket cfg is no longer restored as top-level devices (parent strip `add_children` owns them). Cfg/queue paths resolve the SmartStrip parent from `{parent}01`.. addresses, session reuse rebinds live child `dev` and `primary_node`, and strip plugs skip startup connect. Null-safe `set_drivers_a` / `is_connected` / energy updates stop poll crashes when a child device is not bound yet.
+
 ## [3.3.26] - 2026-07-08
 
 ### Fixed
