@@ -118,7 +118,6 @@ The commands for this node
    * Poll's all devices and sets all status in the ISY
 #### Discover
    * Runs discovery to find Kasa/Tapo devices on configured networks
-   * Posts a Polyglot notice when discovery starts, updates it when finished, and clears that notice on the next long poll
 #### Install Profile
    * This uploads the current profile into the ISY.
    * Typically this is not necessary, but sometimes the ISY needs the profile uploaded twice.

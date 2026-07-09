@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.3.28] - 2026-07-08
+
+### Removed
+
+- **Discover status notices:** no longer posts Polyglot "Discovery started/finished" notices (noisy with `auto_discover` on each long poll). Discovery still runs and logs as before.
+
 ## [3.3.27] - 2026-07-08
 
 ### Fixed

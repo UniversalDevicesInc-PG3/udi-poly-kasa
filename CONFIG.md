@@ -12,7 +12,6 @@ Long poll does the following
 - Sends heartbeat DON/DOF to Controller node
 - For devices that have poll enabled, updates device status
 - If auto_discover is on, runs a discover looking for new devices
-- Clears a prior **Discovery finished** notice (posted when Discover completes) so the notice stays visible until the next long poll
 
 ### Custom Params
 

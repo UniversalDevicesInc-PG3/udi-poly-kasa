@@ -109,9 +109,6 @@ class Controller(Node):
         self.slow_future_warn_threshold = 5
         self._discover_wait_logged = False
         self._long_poll_busy_logged = False
-        # Discover status notice: set on start, updated on finish, cleared
-        # on the following longPoll (not the same cycle that finishes discover).
-        self._discover_notice_clear_on_longpoll = False
         self._unsupported_device_types_logged = set()
         # MAC / device_id tokens for cameras paired under a Tapo hub.
         self._hub_child_identities = set()
@@ -660,9 +657,6 @@ class Controller(Node):
         self._long_poll_busy_logged = False
         self.in_long_poll = True
         try:
-            # Clear a prior discover-finished notice on this cycle, before any
-            # new auto-discover that may post a fresh start/finish notice.
-            self._clear_discover_notice_if_due()
             # Heartbeat is not sent if stuck in discover or long_poll?
             self.heartbeat()
             if self.auto_discover:
@@ -815,34 +809,6 @@ class Controller(Node):
 
         return targets
 
-    _DISCOVER_NOTICE_KEY = 'discover'
-
-    def _set_discover_notice(self, message):
-        """Post or update the session discover status notice."""
-        timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-        body = str(message or '').strip() or 'Discovery'
-        self.Notices[self._DISCOVER_NOTICE_KEY] = (
-            f'[{timestamp}] [discover] {body}'
-        )
-
-    def _clear_discover_notice(self):
-        try:
-            self.Notices.delete(self._DISCOVER_NOTICE_KEY)
-        except KeyError:
-            pass
-        except Exception:
-            LOGGER.debug('clear discover notice failed', exc_info=True)
-        self._discover_notice_clear_on_longpoll = False
-
-    def _clear_discover_notice_if_due(self):
-        if not getattr(self, '_discover_notice_clear_on_longpoll', False):
-            return
-        self._clear_discover_notice()
-
-    def _finish_discover_notice(self, message='Discovery finished'):
-        self._set_discover_notice(message)
-        self._discover_notice_clear_on_longpoll = True
-
     def discover(self):
         self.devm = {}
         self._pending_device_adds = []
@@ -850,14 +816,6 @@ class Controller(Node):
         self._discover_batch_has_hub = False
         targets = self._discover_targets()
         LOGGER.info('enter: targets=%s', targets)
-        self._discover_notice_clear_on_longpoll = False
-        if targets:
-            self._set_discover_notice(
-                f'Discovery started ({len(targets)} network'
-                f'{"s" if len(targets) != 1 else ""})'
-            )
-        else:
-            self._set_discover_notice('Discovery started')
         try:
             for target in targets:
                 LOGGER.info('calling: _discover(target=%s)', target)
@@ -881,7 +839,6 @@ class Controller(Node):
             self.drain_pending_device_adds()
             self.discover_done = True
             self._after_inventory_sync()
-            self._finish_discover_notice('Discovery finished')
             LOGGER.info("exit")
 
     # We have this in controller so all error handling is in one
@@ -3809,14 +3766,6 @@ class Controller(Node):
             return False
         self._pending_device_adds = []
         targets = self._discover_targets()
-        self._discover_notice_clear_on_longpoll = False
-        if targets:
-            self._set_discover_notice(
-                f'Discovery started ({len(targets)} network'
-                f'{"s" if len(targets) != 1 else ""})'
-            )
-        else:
-            self._set_discover_notice('Discovery started')
         try:
             for target in targets:
                 LOGGER.info('discover_new target=%s', target)
@@ -3839,7 +3788,6 @@ class Controller(Node):
             self._try_adopt_deferred_hub_cameras()
             self._after_inventory_sync()
         finally:
-            self._finish_discover_notice('Discovery finished')
             LOGGER.info("exit")
 
     async def _discover_new_a(self, target=None):
