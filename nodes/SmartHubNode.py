@@ -127,6 +127,12 @@ class SmartHubNode(SmartDeviceNode):
                     and self._is_hub_camera_child(existing)
                     and self.controller._session_has_device(cfg={'address': naddress})
                 ):
+                    # Already adopted — still refresh LAN IP from this wake window.
+                    lan = str(snap.get('host') or '').strip()
+                    if lan:
+                        self.controller._refresh_hub_deferred_camera_lan_host(
+                            existing, lan
+                        )
                     continue
             nname = snap.get('alias') or snap.get('model') or 'Camera'
             dev = await self.controller.discover_single(host=snap.get('host'))

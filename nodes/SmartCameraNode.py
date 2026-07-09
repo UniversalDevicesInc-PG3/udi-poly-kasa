@@ -13,6 +13,7 @@ from camera_helpers import (
     motion_detection_enabled,
     set_camera_notifications_enabled,
 )
+from device_errors import ERR_NOT_READY, ERR_OK
 from kasa_compat import DeviceError
 from nodes import SmartDeviceNode
 
@@ -70,12 +71,28 @@ class SmartCameraNode(SmartDeviceNode):
             return await self._update_hub_deferred_a()
         return await super().update_a()
 
+    def _camera_err_host(self):
+        """LAN IP used for per-camera ERR (not the hub host)."""
+        hub_host = getattr(self.primary_node, 'host', None)
+        return (
+            camera_lan_host(cfg=self.cfg, dev=self.dev, hub_host=hub_host)
+            or self.host
+        )
+
+    def _mark_hub_deferred_offline(self, reason):
+        """Connected=False with Error=Not ready (expected for sleeping cams)."""
+        LOGGER.debug('%s %s', self.pfx, reason)
+        self.set_connected(False)
+        host = self._camera_err_host()
+        if host:
+            self.controller._set_host_device_err(host, ERR_NOT_READY)
+
     async def _update_hub_deferred_a(self):
         hub_node = self.primary_node
         hub_host = getattr(hub_node, 'host', None) if hub_node else None
         if hub_node is not None:
             if self.controller.host_should_skip(hub_host):
-                self.set_connected(False)
+                self._mark_hub_deferred_offline('hub host circuit-broken')
                 return False
             if await self.controller.hub_node_update_a(hub_node):
                 hub_dev = getattr(hub_node, 'dev', None)
@@ -88,31 +105,51 @@ class SmartCameraNode(SmartDeviceNode):
                         ret = await self.controller.update_dev(child)
                         if ret:
                             self.set_connected(True)
+                            err_host = self._camera_err_host()
+                            if err_host:
+                                self.controller._set_host_device_err(
+                                    err_host, ERR_OK
+                                )
                         else:
-                            self.set_connected(
-                                False,
-                                f'{self.pfx} hub-child update failed',
-                            )
+                            # update_dev already set ERR; avoid connect-msg overwrite.
+                            self.set_connected(False)
                         return ret
         if hub_host and self.controller.host_hub_protocol_degraded(hub_host):
             LOGGER.debug(
                 '%s hub protocol degraded; skipping direct LAN fallback',
                 self.pfx,
             )
-            self.set_connected(False)
+            self._mark_hub_deferred_offline(
+                'hub protocol degraded; no LAN fallback'
+            )
             return False
-        lan_host = camera_lan_host(
+        lan_host = self.controller.lan_host_for_hub_camera(
+            mac=(self.cfg or {}).get('mac'),
             cfg=self.cfg,
-            dev=self.dev,
-            hub_host=getattr(hub_node, 'host', None) if hub_node else None,
+            hub_host=hub_host,
+            node_host=self.host,
         )
         if not lan_host:
-            self.set_connected(False)
+            LOGGER.warning(
+                '%s hub-deferred update has no camera LAN IP '
+                '(hub lists no child; camera may still be awake on LAN)',
+                self.pfx,
+            )
+            self._mark_hub_deferred_offline(
+                'no camera LAN host for hub-deferred update'
+            )
             return False
+        # Persist IP learned from discover buffer / node host so later polls work.
+        if is_hub_deferred_camera_cfg(self.cfg):
+            self.controller._refresh_hub_deferred_camera_lan_host(
+                self, lan_host
+            )
         if self.dev is None or getattr(self.dev, 'host', None) != lan_host:
             self.dev = await self.controller.discover_single(host=lan_host)
         if self.dev is None:
-            self.set_connected(False)
+            self._mark_hub_deferred_offline(
+                f'camera not reachable at {lan_host}'
+            )
             return False
         ret = await self.controller.update_dev(self.dev)
         hub_node = self.primary_node
@@ -120,8 +157,10 @@ class SmartCameraNode(SmartDeviceNode):
             self.controller._refresh_hub_camera_naming(hub_node)
         if ret:
             self.set_connected(True)
+            self.controller._set_host_device_err(lan_host, ERR_OK)
         else:
-            self.set_connected(False, f'{self.pfx} hub-deferred direct update failed')
+            # update_dev already set ERR; avoid connect-msg overwrite.
+            self.set_connected(False)
         return ret
 
     async def _resolve_hub_child_dev(self):
@@ -153,7 +192,12 @@ class SmartCameraNode(SmartDeviceNode):
     async def _discover_camera_lan_dev(self, *, reason, cause=None):
         """Direct-LAN discover for hub-child control when hub path is unavailable."""
         hub_host = getattr(self.primary_node, 'host', None)
-        lan_host = camera_lan_host(cfg=self.cfg, dev=self.dev, hub_host=hub_host)
+        lan_host = self.controller.lan_host_for_hub_camera(
+            mac=(self.cfg or {}).get('mac'),
+            cfg=self.cfg,
+            hub_host=hub_host,
+            node_host=self.host,
+        )
         if not lan_host or lan_host == hub_host:
             if cause is not None:
                 raise cause
@@ -164,6 +208,8 @@ class SmartCameraNode(SmartDeviceNode):
             reason,
             lan_host,
         )
+        if is_hub_deferred_camera_cfg(self.cfg):
+            self.controller._refresh_hub_deferred_camera_lan_host(self, lan_host)
         lan_dev = await self.controller.discover_single(host=lan_host)
         if lan_dev is None:
             raise DeviceError(

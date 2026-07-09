@@ -33,4 +33,7 @@ def err_code_for_connect_message(msg):
     text = str(msg).lower()
     if 'unable to discover' in text:
         return ERR_DISCOVER
+    # Hub-deferred / solar cameras: offline without a kasa exception path.
+    if 'hub-deferred' in text or 'not ready' in text or 'asleep' in text:
+        return ERR_NOT_READY
     return None

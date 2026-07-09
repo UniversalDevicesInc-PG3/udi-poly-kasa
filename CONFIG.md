@@ -102,7 +102,7 @@ If hub-paired **Camera State** (privacy lens) or **Set Notifications** commands 
 
 **RTSP / external viewing:** IoX does not show video. For VLC or NVR software, configure a **Camera Account** in the Tapo app (per camera → Advanced Settings → Camera Account). python-kasa can build an RTSP URL when those credentials are available; the plugin does not store RTSP URLs in IoX drivers in this release.
 
-**Offline solar cameras:** Hub-child cameras that sleep may show **Connected** = false and **Error** = **Not ready** until they wake; this is expected (the host was reached, but device info was empty — not **Host unreachable**).
+**Offline solar / battery cameras:** Hub-child cameras that sleep may show **Connected** = false and **Error** = **Not ready** until they wake. That includes empty `getDeviceInfo` on LAN and hub-deferred update paths that cannot reach the camera yet (not **Host unreachable**, and not **Error** = **OK**). When discover sees the camera awake on LAN, the plugin refreshes its saved LAN address and retries the update.
 
 **Solar cameras (e.g. C675D) and Discover:** Battery/solar models often **do not answer UDP broadcast discovery** even when awake. They may still work by **IP**. Add each camera under **Kasa devices** (host `192.168.x.x`) while the camera is awake in the Tapo app, then restart the node server or run **Discover**. The plugin connects by IP and nests the camera under your H500 hub. Set the **Device name** column (or use `192.168.x.x - TapoName` in the host field) so IoX does not keep a generic `Kasa C675D` label when the first connect happens before Tapo returns the alias.
 

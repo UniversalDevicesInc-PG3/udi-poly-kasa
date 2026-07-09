@@ -507,7 +507,15 @@ class SmartDeviceNode(Node):
             # Make sure current cfg is saved
             LOGGER.debug(f"{self.pfx} save_cfg {st}")
             try:
-                self.cfg['host']  = self.dev.host
+                if self.dev is not None and getattr(self.dev, 'host', None):
+                    self.cfg['host'] = self.dev.host
+                    # Hub-deferred cameras keep a separate camera_host for LAN.
+                    if getattr(self, 'hub_deferred', False):
+                        hub_host = getattr(
+                            getattr(self, 'primary_node', None), 'host', None
+                        )
+                        if self.dev.host and self.dev.host != hub_host:
+                            self.cfg['camera_host'] = self.dev.host
                 # Can't update host if not connected.
                 if st and self.dev is not None:
                     try:

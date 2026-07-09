@@ -56,8 +56,10 @@ from nodes import SmartHubNode
 from nodes.SmartDeviceNode import SmartDeviceNode
 from camera_helpers import (
     HUB_CHILD_CAMERA_TYPES,
+    battery_percent,
     camera_lan_host,
     camera_model_has_battery,
+    camera_notifications_enabled,
     camera_snapshot_alias,
     cloud_devices_to_snapshots,
     dev_has_battery,
@@ -68,6 +70,7 @@ from camera_helpers import (
     is_hub_child_dev,
     is_hub_deferred_camera_cfg,
     merge_camera_snapshots,
+    motion_detection_enabled,
     normalize_mac_for_match,
 )
 from tapo_cloud import fetch_cloud_camera_roster
@@ -1250,11 +1253,24 @@ class Controller(Node):
         host = str(host)
         found = []
         seen = set()
+
+        def _node_hosts(node):
+            hosts = set()
+            node_host = getattr(node, 'host', None)
+            if node_host is not None:
+                hosts.add(str(node_host))
+            cfg = getattr(node, 'cfg', None) or {}
+            for key in ('host', 'camera_host'):
+                value = cfg.get(key)
+                if value:
+                    hosts.add(str(value))
+            return hosts
+
         for node in self.nodes_by_mac.values():
             node_id = id(node)
             if node_id in seen:
                 continue
-            if str(getattr(node, 'host', None) or '') == host:
+            if host in _node_hosts(node):
                 found.append(node)
                 seen.add(node_id)
         for node_address in self.poly.getNodes():
@@ -1264,12 +1280,7 @@ class Controller(Node):
             node_id = id(node)
             if node_id in seen:
                 continue
-            node_host = getattr(node, 'host', None)
-            if node_host is None:
-                cfg = getattr(node, 'cfg', None)
-                if cfg:
-                    node_host = cfg.get('host')
-            if str(node_host or '') == host:
+            if host in _node_hosts(node):
                 found.append(node)
                 seen.add(node_id)
         return found
@@ -3198,6 +3209,44 @@ class Controller(Node):
                 f' ({merged} merged)' if merged else '',
             )
 
+    def lan_host_for_hub_camera(self, *, mac=None, cfg=None, hub_host=None, node_host=None):
+        """Best-known camera LAN IP for hub-deferred update/control.
+
+        Prefer saved camera_host / deferred host, then recent discover buffer,
+        then a node host that is not the hub IP. Hub API often lists 0 children
+        while the camera is awake on LAN — without this, query returns in 0ms.
+        """
+        cfg = cfg or {}
+        hub = str(hub_host or '').strip()
+        lan = camera_lan_host(cfg=cfg, hub_host=hub or None)
+        if lan:
+            return lan
+        # Recent LAN/cloud discover snapshots (may be newer than saved cfg).
+        target = normalize_mac_for_match(mac or cfg.get('mac'))
+        if target:
+            for snap in getattr(self, '_deferred_hub_cameras', None) or []:
+                if not isinstance(snap, dict):
+                    continue
+                if normalize_mac_for_match(snap.get('mac')) != target:
+                    continue
+                host = str(snap.get('host') or '').strip()
+                if host and host != hub:
+                    return host
+            # Other saved cfg rows for the same MAC (merge leftovers).
+            for key in getattr(self, 'Data', None) or {}:
+                other = self.get_device_cfg(key)
+                if not other or not is_hub_child_camera_cfg(other):
+                    continue
+                if normalize_mac_for_match(other.get('mac')) != target:
+                    continue
+                host = camera_lan_host(cfg=other, hub_host=hub or None)
+                if host:
+                    return host
+        node_host = str(node_host or '').strip()
+        if node_host and node_host != hub:
+            return node_host
+        return None
+
     def _buffer_hub_cameras_for_adoption(self, camera_devs):
         """Remember LAN cameras to nest under the hub when its child list is empty."""
         if not camera_devs:
@@ -3453,6 +3502,99 @@ class Controller(Node):
             return True
         return False
 
+    def _refresh_hub_deferred_camera_lan_host(self, node, lan_host):
+        """Persist discovered LAN IP on a hub-deferred camera node."""
+        if node is None or not lan_host:
+            return False
+        cfg = getattr(node, 'cfg', None)
+        if not isinstance(cfg, dict) or not is_hub_deferred_camera_cfg(cfg):
+            return False
+        changed = False
+        if cfg.get('camera_host') != lan_host:
+            cfg['camera_host'] = lan_host
+            changed = True
+        # Keep cfg.host as the camera LAN IP for deferred cams (not hub IP).
+        if cfg.get('host') != lan_host:
+            cfg['host'] = lan_host
+            changed = True
+        if getattr(node, 'host', None) != lan_host:
+            node.host = lan_host
+            changed = True
+        if changed:
+            LOGGER.info(
+                'Updated hub-deferred camera %s LAN host to %s',
+                getattr(node, 'name', getattr(node, 'address', '?')),
+                lan_host,
+            )
+            try:
+                self.save_cfg(cfg)
+            except Exception as ex:
+                LOGGER.debug(
+                    'save_cfg after camera_host refresh failed: %s', ex
+                )
+        return changed
+
+    async def _touch_hub_deferred_camera_from_lan(self, dev):
+        """When LAN discover finds a known hub camera, refresh host and update.
+
+        Standalone discover skips hub-managed cameras, which previously left
+        sleeping battery cams with Connected=False / Error=OK even while the
+        camera was briefly awake on LAN.
+        """
+        if (
+            dev is None
+            or str(getattr(dev, 'device_type', None)) != 'DeviceType.Camera'
+        ):
+            return False
+        existing = self._existing_node_for_dev(dev)
+        if existing is None:
+            return False
+        cfg = getattr(existing, 'cfg', None) or {}
+        if not is_hub_deferred_camera_cfg(cfg):
+            return False
+        lan_host = str(getattr(dev, 'host', None) or '').strip()
+        if not lan_host:
+            return False
+        self._refresh_hub_deferred_camera_lan_host(existing, lan_host)
+        # Prefer the live discovered Device for this wake window.
+        existing.dev = dev
+        ok = await self.update_dev(dev)
+        if ok:
+            existing.set_connected(True)
+            self._set_host_device_err(lan_host, ERR_OK)
+            LOGGER.info(
+                'Hub-deferred camera %s reached on LAN at %s',
+                getattr(existing, 'name', existing.address),
+                lan_host,
+            )
+            # Refresh IoX drivers from the device we just updated.
+            # Avoid set_state_a here — it would re-enter update_a/LAN discover.
+            try:
+                if hasattr(existing, 'setDriver'):
+                    is_on = getattr(dev, 'is_on', None)
+                    if is_on is not None:
+                        existing.setDriver('ST', 100 if is_on else 0)
+                    motion = motion_detection_enabled(dev)
+                    if motion is not None:
+                        existing.setDriver('GV2', 1 if motion else 0)
+                    notifications = camera_notifications_enabled(dev)
+                    if notifications is not None:
+                        existing.setDriver('GV4', 1 if notifications else 0)
+                    if getattr(existing, 'id', '') == 'SmartCamera_B':
+                        level = battery_percent(dev)
+                        if level is not None:
+                            existing.setDriver('GV3', level)
+            except Exception as ex:
+                LOGGER.debug(
+                    'driver refresh after LAN touch failed for %s: %s',
+                    getattr(existing, 'name', existing.address),
+                    ex,
+                )
+        else:
+            # update_dev already classified ERR (e.g. Not ready / auth).
+            existing.set_connected(False)
+        return True
+
     def migrate_standalone_camera_to_hub_child(self, child_dev):
         """Remove a top-level camera node when the same device is a hub child."""
         mac = self._dev_attr(child_dev, 'mac')
@@ -3526,6 +3668,8 @@ class Controller(Node):
             await self._adopt_discovered_device(dev)
         if cameras:
             if self._tapo_hub_known():
+                for cam in cameras:
+                    await self._touch_hub_deferred_camera_from_lan(cam)
                 self._buffer_hub_cameras_for_adoption(cameras)
             else:
                 for dev in cameras:
@@ -3538,6 +3682,12 @@ class Controller(Node):
                 'Skipping standalone camera discover; managed as hub child: %s',
                 SmartDeviceNode._dev_desc(dev),
             )
+            if (
+                str(getattr(dev, 'device_type', None)) == 'DeviceType.Camera'
+                and self._tapo_hub_known()
+            ):
+                await self._touch_hub_deferred_camera_from_lan(dev)
+                self._buffer_hub_cameras_for_adoption([dev])
             return False
         existing = self._existing_node_for_dev(dev)
         if existing is not None:
@@ -3653,6 +3803,9 @@ class Controller(Node):
                     str(getattr(dev, 'device_type', None)) == 'DeviceType.Camera'
                     and self._tapo_hub_known()
                 ):
+                    # Keep the Device alive when a hub-deferred node adopts it.
+                    if await self._touch_hub_deferred_camera_from_lan(dev):
+                        keep_dev = True
                     self._buffer_hub_cameras_for_adoption([dev])
                 return False
             existing = self._existing_node_for_dev(dev)

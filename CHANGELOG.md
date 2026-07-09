@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.3.30] - 2026-07-09
+
+### Fixed
+
+- **Battery / hub-deferred cameras awake on LAN but Connected=False / Error=OK:** Query returned in 0ms because the node had no usable `camera_host` while the hub listed 0 children — even though discover saw the camera (e.g. C460 at `.107`). Now: (1) resolve LAN IP from discover buffer / saved cfg / node host; (2) when discover finds a known hub camera, refresh `camera_host` and update it; (3) hub adoption no longer skips existing cams without saving their LAN IP; (4) offline hub-deferred paths set **Error** = **Not ready**.
+
 ## [3.3.29] - 2026-07-09
 
 ### Fixed
