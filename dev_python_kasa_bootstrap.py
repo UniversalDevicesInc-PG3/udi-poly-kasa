@@ -15,7 +15,8 @@ MARKER_NAME = '.dev_python_kasa.json'
 CLONE_DIR_NAME = 'python-kasa'
 SYMLINK_NAME = 'kasa'
 DEFAULT_REPO_URL = 'https://github.com/jimboca/python-kasa.git'
-DEFAULT_BRANCH = 'master'
+# Beta/production pin: TPAP transport + FreeBSD gmpy2.mpz fix (see install.sh).
+DEFAULT_BRANCH = 'tpap-gmpy2-mpz-fix'
 _GIT_CANDIDATES = (
     '/usr/local/bin/git',
     '/usr/bin/git',

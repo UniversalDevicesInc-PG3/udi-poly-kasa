@@ -367,26 +367,10 @@ class SmartDeviceNode(Node):
         res = self._run_coro(self.set_on_a(), 'set_on_a')
         LOGGER.debug(f'{self.pfx} exit result={res}')
 
-    async def set_on_a(self):
-        LOGGER.debug(f'{self.pfx} enter')
-        await self.dev.turn_on()
-        LOGGER.debug(f'{self.pfx} setDriver(ST,100)')
-        self.setDriver('ST',100)
-        await self.set_state_a(set_energy=True)
-        LOGGER.debug(f'{self.pfx} exit')
-
     def set_off(self):
         LOGGER.debug(f'{self.pfx} enter')
         res = self._run_coro(self.set_off_a(), 'set_off_a')
         LOGGER.debug(f'result={res}')
-        LOGGER.debug(f'{self.pfx} exit')
-
-    async def set_off_a(self):
-        LOGGER.debug(f'{self.pfx} enter')
-        await self.dev.turn_off()
-        LOGGER.debug(f'{self.pfx} setDriver(ST,0)')
-        self.setDriver('ST',0)
-        await self.set_state_a(set_energy=True)
         LOGGER.debug(f'{self.pfx} exit')
 
     # python-kasa don't have these on all devices anymore :(
@@ -396,6 +380,40 @@ class SmartDeviceNode(Node):
         return True if dev.features.get("hsv") else False
     def is_variable_color_temp(self,dev):
         return True if dev.features.get('color_temperature') else False
+
+    def _st_uom(self):
+        """UOM declared for ST in this node's drivers list."""
+        for drv in getattr(self, 'drivers', None) or []:
+            if drv.get('driver') == 'ST':
+                return drv.get('uom')
+        return None
+
+    def _set_st_on_off(self, is_on):
+        """Report ST as On/Off (0/100) or brightness percent per node UOM."""
+        uom = self._st_uom()
+        if uom == 78:
+            self.setDriver('ST', 100 if is_on else 0, uom=78)
+            return
+        if is_on and self.dev is not None and self.is_dimmable(self.dev):
+            self.setDriver('ST', self.dev.brightness, uom=uom)
+            return
+        self.setDriver('ST', 100 if is_on else 0, uom=uom)
+
+    async def set_on_a(self):
+        LOGGER.debug(f'{self.pfx} enter')
+        await self.dev.turn_on()
+        LOGGER.debug(f'{self.pfx} setDriver(ST,100)')
+        self._set_st_on_off(True)
+        await self.set_state_a(set_energy=True)
+        LOGGER.debug(f'{self.pfx} exit')
+
+    async def set_off_a(self):
+        LOGGER.debug(f'{self.pfx} enter')
+        await self.dev.turn_off()
+        LOGGER.debug(f'{self.pfx} setDriver(ST,0)')
+        self._set_st_on_off(False)
+        await self.set_state_a(set_energy=True)
+        LOGGER.debug(f'{self.pfx} exit')
 
     async def set_state_a(self,set_energy=True):
         try:
@@ -407,14 +425,19 @@ class SmartDeviceNode(Node):
                 if self.dev.is_on is True:
                     if self.is_dimmable(self.dev):
                         self.brightness = st2bri(self.dev.brightness)
-                        self.setDriver('ST',self.dev.brightness)
-                        self.setDriver('GV5',int(st2bri(self.dev.brightness)))
+                        # Plugs use onoff (UOM 78) for ST; brightness lives on GV5.
+                        # Bulbs/dimmers use percent (UOM 51) for ST.
+                        if self._st_uom() == 78:
+                            self.setDriver('ST', 100, uom=78)
+                        else:
+                            self.setDriver('ST', self.dev.brightness)
+                        self.setDriver('GV5', int(st2bri(self.dev.brightness)))
                     else:
                         self.brightness = 100
-                        self.setDriver('ST',100)
+                        self._set_st_on_off(True)
                 else:
                     self.brightness = 0
-                    self.setDriver('ST',0)
+                    self._set_st_on_off(False)
                 if self.is_color(self.dev):
                     hsv = self.dev.hsv
                     self.setDriver('GV3',hsv[0])

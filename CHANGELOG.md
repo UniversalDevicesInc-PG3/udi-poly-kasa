@@ -7,6 +7,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.3.31] - 2026-08-06
+
+### Added
+
+- **TPAP device support (beta):** `install.sh` clones nested
+  `jimboca/python-kasa` branch `tpap-gmpy2-mpz-fix` (upstream PR
+  [python-kasa#1592](https://github.com/python-kasa/python-kasa/pull/1592)
+  plus a FreeBSD `gmpy2.mpz` handshake fix) and symlinks `kasa` so plugs
+  such as **KP125M** with `encrypt_type=TPAP` can connect. Nested install is
+  enabled by default (`dev_python_kasa=true`, branch
+  `tpap-gmpy2-mpz-fix`). Existing installs still on branch `master` are
+  migrated to that pin on startup.
+
+### Fixed
+
+- **Plug / strip On/Off status:** **State** (`ST`) for plugs, strip parents,
+  and strip outlets now uses UOM **78** (On/Off) to match the profile
+  `onoff` editor, instead of UOM 51 (percentage) which showed `0%` /
+  `100%`. Dimmer/bulb brightness on `ST` is unchanged.
+
+### Requirements (FreeBSD / eISY)
+
+TPAP needs **ecdsa** and **passlib**. `install.sh` installs them via pip
+from `requirements.txt`. If pip cannot build or install them on FreeBSD,
+install the system packages once (as root), then reinstall or restart the
+Node Server:
+
+```bash
+pkg install py311-ecdsa py311-passlib
+```
+
+Also requires **git** on the PG3 host so `install.sh` can clone the nested
+`python-kasa` tree (`pkg install git` if missing).
+
 ## [3.3.30] - 2026-07-09
 
 ### Fixed

@@ -57,15 +57,23 @@ The node server does not require that you reserve IP addresses for the devices, 
 This defaults to false. When set to true, IoX node names are changed to match the Kasa app alias on first add and after each successful device update (short poll, long poll, and reconnect). HS300 outlet names sync when the parent strip updates.
 Note: there is currently a bug in PG3 so renames during long poll may not persist until the node server is restarted.
 
-#### dev_python_kasa (development)
+#### TPAP / nested python-kasa (3.3.31+)
 
-Optional custom parameters for testing unreleased [python-kasa](https://github.com/python-kasa/python-kasa) camera and hub fixes before they ship on PyPI:
+As of **3.3.31**, install clones nested [python-kasa](https://github.com/jimboca/python-kasa) branch **`tpap-gmpy2-mpz-fix`** (TPAP transport for devices such as **KP125M**, plus a FreeBSD `gmpy2.mpz` fix) and enables it by default. Requires **git** on the PG3 host.
 
-- **`dev_python_kasa`** — `true` / `false` (default `false`). When `true`, clones `python-kasa` under the plugin directory and symlinks `kasa` → `python-kasa/kasa` so imports use the git tree instead of pip.
+**FreeBSD / eISY:** if pip cannot install TPAP deps, install once then restart the Node Server:
+
+```bash
+pkg install py311-ecdsa py311-passlib
+```
+
+Advanced override parameters (usually leave defaults):
+
+- **`dev_python_kasa`** — `true` / `false` (default `true` in 3.3.31+).
 - **`dev_python_kasa_repo`** — git URL (default `https://github.com/jimboca/python-kasa.git`).
-- **`dev_python_kasa_branch`** — git branch (default `master`; e.g. `H500Hub`).
+- **`dev_python_kasa_branch`** — git branch (default `tpap-gmpy2-mpz-fix`).
 
-Toggling these parameters or changing the repo URL/branch restarts the Node Server automatically. Each restart while enabled checks out the branch and runs `git pull --ff-only` before kasa loads. See **CONFIG.md** for setup notes (`git` required, writable plugin directory).
+Changing these restarts the Node Server; while enabled, each start checks out the branch and runs `git pull --ff-only` before kasa loads. See **CONFIG.md**.
 
 ## Kasa Devices
 
@@ -98,6 +106,8 @@ IoX cannot display video streams. To view RTSP locally, use the Tapo app's **Cam
 ### Unknown devices
 
 All other simple plug and bulb devices should work, the nodeserver attempts to figure out the capabilities of the device instead of hardcoding based on the model.  But if you have an issue please add to [UDI Poly Kasa Issues](https://github.com/jimboca/udi-poly-kasa/issues) Feel free to Fork this repo and add support as you like and send me a pull request.
+
+Non-dimmable plugs and strip outlets report **State** as On/Off (not a percentage). Bulbs and wall dimmers still use percent brightness on **State** where that applies.
 
 ## Kasa Controller
 

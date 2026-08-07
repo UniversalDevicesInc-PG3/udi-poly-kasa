@@ -22,7 +22,8 @@ class SmartStripPlugNode(SmartDeviceNode):
         self.poll = False
         # All devices have these.
         self.drivers = [
-            {'driver': 'ST', 'value': 0, 'uom': 51, 'name': 'State'},
+            # UOM 78 = On/Off (0/100); matches profile editor onoff (not percent).
+            {'driver': 'ST', 'value': 0, 'uom': 78, 'name': 'State'},
             {'driver': 'GV0', 'value': 0, 'uom': 2, 'name': 'Connected'},
         ]
         if cfg is None:
@@ -74,11 +75,11 @@ class SmartStripPlugNode(SmartDeviceNode):
         if self.dev.is_on is True:
             self.brightness = 100
             LOGGER.debug(f'{self.pfx} setDriver(ST,100)')
-            self.setDriver('ST',100)
+            self.setDriver('ST', 100, uom=78)
         else:
             self.brightness = 0
             LOGGER.debug(f'{self.pfx} setDriver(ST,0)')
-            self.setDriver('ST',0)
+            self.setDriver('ST', 0, uom=78)
         if set_energy:
             await self._set_energy_a()
 

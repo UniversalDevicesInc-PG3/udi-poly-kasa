@@ -5003,7 +5003,8 @@ class Controller(Node):
         #
         defaults = {
             "change_node_names": "false",
-            "dev_python_kasa": "false",
+            # Nested python-kasa (TPAP) is the default install path as of 3.3.31.
+            "dev_python_kasa": "true",
             "dev_python_kasa_repo": default_repo_url(None),
             "dev_python_kasa_branch": default_branch(None),
             "discover_timeout": 10,
@@ -5015,6 +5016,21 @@ class Controller(Node):
             if params is None or not param in params:
                 self.Parameters[param] = defaults[param]
                 return
+        # Upgrades that still have pre-TPAP branch defaults: move to the
+        # install.sh pin so sync does not wipe the nested TPAP clone.
+        br = str(self.Parameters.get('dev_python_kasa_branch') or '').strip()
+        if br in ('', 'master'):
+            tpap_branch = default_branch(None)
+            LOGGER.info(
+                'Migrating dev_python_kasa to enabled / %s for TPAP support',
+                tpap_branch,
+            )
+            self.Parameters['dev_python_kasa'] = 'true'
+            self.Parameters['dev_python_kasa_repo'] = default_repo_url(
+                self.Parameters.get('dev_python_kasa_repo')
+            )
+            self.Parameters['dev_python_kasa_branch'] = tpap_branch
+            return
         #
         # Move Old Params with just the mac to Data
         # Wait for data to be loaded.

@@ -12,7 +12,8 @@ class SmartStripNode(SmartDeviceNode):
         self.name = name
         self._invalid_strip_dev_logged = False
         self.drivers = [
-            {'driver': 'ST', 'value': 0, 'uom': 51, 'name': 'State'},
+            # UOM 78 = On/Off (0/100); matches profile editor onoff (not percent).
+            {'driver': 'ST', 'value': 0, 'uom': 78, 'name': 'State'},
             {'driver': 'GV0', 'value': 0, 'uom': 2, 'name': 'Connected'},
             {'driver': 'GV6', 'value': 1, 'uom': 2, 'name': 'Poll Device'},
         ]
@@ -229,14 +230,14 @@ class SmartStripNode(SmartDeviceNode):
     def set_on(self):
         LOGGER.debug(f'enter: {self._dev_desc(self.dev)}')
         LOGGER.debug(f'{self.pfx} setDriver(ST,100)')
-        self.setDriver('ST', 100)
+        self.setDriver('ST', 100, uom=78)
         self.st = True
         LOGGER.debug(f'exit: {self._dev_desc(self.dev)}')
 
     def set_off(self):
         LOGGER.debug(f'enter: {self._dev_desc(self.dev)}')
         LOGGER.debug(f'{self.pfx} setDriver(ST,0)')
-        self.setDriver('ST', 0)
+        self.setDriver('ST', 0, uom=78)
         self.st = False
         LOGGER.debug(f'exit: {self._dev_desc(self.dev)}')
 

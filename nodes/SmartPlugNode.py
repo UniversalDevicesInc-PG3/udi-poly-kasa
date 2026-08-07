@@ -17,7 +17,8 @@ class SmartPlugNode(SmartDeviceNode):
         self.name = name
         # All devices have these.
         self.drivers = [
-            {'driver': 'ST', 'value': 0, 'uom': 51, 'name': 'State'},
+            # UOM 78 = On/Off (0/100); matches profile editor onoff (not percent).
+            {'driver': 'ST', 'value': 0, 'uom': 78, 'name': 'State'},
             {'driver': 'GV0', 'value': 0, 'uom': 2, 'name': 'Connected'},
             {'driver': 'GV6', 'value': 1, 'uom': 2, 'name': 'Poll Device'},
         ]

@@ -38,11 +38,19 @@ If some supported devices are not being discovered, you can try to increase this
 
 #### `dev_python_kasa`
 
-**Advanced / development only.** When set to `true`, the Node Server clones or updates a nested `python-kasa` git repository inside the plugin directory and creates a `kasa` symlink so unreleased library fixes load instead of the pip-installed package. Default is `false` (use pip `python-kasa` from `requirements.txt`).
+When `true`, the Node Server uses a nested `python-kasa` git clone (and `kasa` symlink) instead of only the pip package. **Default is `true` as of 3.3.31** so TPAP devices (for example **KP125M**) work via branch `tpap-gmpy2-mpz-fix`. `install.sh` clones that tree on install/upgrade.
 
-Changing this parameter, the repo URL, or the branch triggers an automatic Node Server restart so the process reloads the library. On each restart while enabled, the plugin checks out the configured branch and runs `git pull --ff-only` before importing kasa.
+Changing this parameter, the repo URL, or the branch triggers an automatic Node Server restart. On each restart while enabled, the plugin checks out the configured branch and runs `git pull --ff-only` before importing kasa.
 
 Requires `git` on the PG3 host (typically `/usr/local/bin/git` on FreeBSD) and write access to the plugin directory. The Node Server process often has a minimal `PATH`; the plugin resolves common git locations automatically.
+
+**FreeBSD / eISY TPAP dependencies:** nested python-kasa needs `ecdsa` and `passlib`. Prefer:
+
+```bash
+pkg install py311-ecdsa py311-passlib
+```
+
+if `pip3 install -r requirements.txt` fails to install those packages. Then reinstall or restart the Node Server.
 
 #### `dev_python_kasa_repo`
 
@@ -50,7 +58,7 @@ Git URL for the nested `python-kasa` clone when `dev_python_kasa` is `true`. Def
 
 #### `dev_python_kasa_branch`
 
-Git branch to check out when `dev_python_kasa` is `true`. Default is `master`. Example: `H500Hub` for camera/hub work on the jimboca fork. Leave blank to use the default.
+Git branch to check out when `dev_python_kasa` is `true`. Default is `tpap-gmpy2-mpz-fix` (TPAP + FreeBSD `gmpy2.mpz` fix). Installs still on `master` are migrated to this pin on startup. Leave blank to use the default.
 
 ### Custom Typed Configuration Parameters
 
@@ -76,6 +84,10 @@ Use the broadcast address ending in `.255`, for example:
 You can also list individual device IPs under **Kasa devices** for hosts that do not answer broadcast discovery.
 
 The plugin also auto-derives broadcast targets from configured manual device IPs and previously saved device hosts, so devices on other subnets are more likely to be found even if Extra Discovery Networks is incomplete.
+
+### Plugs and strips
+
+Non-dimmable plugs, strip parents, and strip outlets report **State** as **On** / **Off** (not `0%` / `100%`). Wall dimmers and bulbs that use brightness on **State** still show a percentage.
 
 ### Tapo cameras and hubs
 
