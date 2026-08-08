@@ -5,8 +5,11 @@ logs/*
 zip_exclude.lst
 *.zip
 python-kasa/*
+python-kasa-tpap/*
 python-kasa.save/*
 python-kasa-broken-backup/*
+python-kasa-h500-wip.bundle
+.dev_python_kasa.json
 *.log
 000*
 kasa/*

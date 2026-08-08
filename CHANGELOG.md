@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.3.32] - 2026-08-07
+
+### Fixed
+
+- **Release zip contents:** exclude local nested `python-kasa-tpap/`,
+  `python-kasa-h500-wip.bundle`, and `.dev_python_kasa.json` from store
+  zips so beta/production packages do not ship large local clones.
+
 ## [3.3.31] - 2026-08-06
 
 ### Added
