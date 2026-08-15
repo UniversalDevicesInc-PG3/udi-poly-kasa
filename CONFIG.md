@@ -29,7 +29,10 @@ If set to true, IoX node names are changed to match the Kasa device alias when t
 
 #### `auto_discover`
 
-If set to run runs discover looking for new devices on each long poll
+If set to `true`, runs Discover looking for **new** devices on each long poll.
+Hub-deferred cameras that already exist but still lack a LAN IP are hunted on
+**hub short poll** even when this is `false` (see **Offline solar / battery
+cameras** below and README **Hub-deferred cameras**).
 
 #### `discover_timeout`
 
@@ -58,7 +61,28 @@ Git URL for the nested `python-kasa` clone when `dev_python_kasa` is `true`. Def
 
 #### `dev_python_kasa_branch`
 
-Git branch to check out when `dev_python_kasa` is `true`. Default is `tpap-gmpy2-mpz-fix` (TPAP + FreeBSD `gmpy2.mpz` fix). Installs still on `master` are migrated to this pin on startup. Leave blank to use the default.
+Git branch to check out when `dev_python_kasa` is `true`. Leave blank to use the
+default. **Changing the branch is handled automatically:** the Node Server
+fetches that branch (including from a TPAP single-branch clone), checks it out,
+and **restarts itself** so the process loads the new library. You do not need a
+manual restart after saving the parameter. A sticky notice confirms the switch;
+if checkout fails, the notice shows the error and the next start retries.
+
+| Branch | Use when |
+|--------|----------|
+| **`tpap-gmpy2-mpz-fix`** (default) | You have **TPAP** devices such as **KP125M** (or other plugs that report `encrypt_type=TPAP`). This is the install/`install.sh` pin as of 3.3.31+. |
+| **`H500Hub`** | You need **Tapo H500 hub / camera** library fixes from the jimboca fork that are not yet on the TPAP branch (hub child-list handling, camera/hub work still landing upstream). Set `dev_python_kasa_branch` to `H500Hub` only for that case. |
+| **`master`** | Rare; upstream/jimboca default without the TPAP pin. Existing installs still on `master` are migrated to `tpap-gmpy2-mpz-fix` on startup unless you set another branch. |
+
+**Do not expect one branch to cover both needs yet.** `tpap-gmpy2-mpz-fix` is for TPAP
+plugs; `H500Hub` is for hub/camera library work. If you need both TPAP plugs and
+H500-specific library fixes on the same host, prefer the default TPAP branch for
+plugs and report any hub/camera gaps — switching to `H500Hub` can leave TPAP
+devices unsupported until those trees are merged.
+
+Installs still on branch `master` are migrated to `tpap-gmpy2-mpz-fix` on startup.
+To stay on `H500Hub`, set `dev_python_kasa_branch` to `H500Hub` explicitly (after
+migration, or before the first start on a new install).
 
 ### Custom Typed Configuration Parameters
 
@@ -101,20 +125,23 @@ Tapo cameras (`DeviceType.Camera`) and hubs (`DeviceType.Hub`, e.g. H500) are di
 | Connected | Device responded to the last poll |
 | Motion Detection | Motion alerts armed in Tapo (config), not a live motion alarm |
 | Notifications | Tapo/Kasa app push notifications enabled |
+| 24/7 Capture | Continuous SD recording all day (`0000-2400`); off means detection recording |
 | Battery Level | Present on battery models (`SmartCamera_B`) |
 | Error | Same labeled error indices as other Kasa device nodes |
 
-**Camera commands:** **On** / **Off** toggle the privacy lens (Camera State). **Set Notifications** enables or disables Tapo app push alerts only — recording and motion detection continue when notifications are off.
+**Camera commands:** **On** / **Off** toggle the privacy lens (Camera State). **Set Notifications** enables or disables Tapo app push alerts only — recording and motion detection continue when notifications are off. **Set 24/7 Capture** turns continuous all-day SD recording on, or switches the schedule to detection recording when off (requires a camera that supports local `record` / SD plan).
 
 **Hub nodes** manage child cameras paired to the hub. Cameras appear nested under the hub in IoX (each child uses its own camera MAC as the node address; the hub remains the parent node).
 
-If hub-paired **Camera State** (privacy lens) or **Set Notifications** commands fail with a protocol error, or the camera is not yet bound as a live hub child (common for sleeping solar cameras), the plugin may retry the same command directly on the camera's LAN IP when that address is known (`camera_host` or a saved host different from the hub).
+If hub-paired **Camera State** (privacy lens), **Set Notifications**, or **Set 24/7 Capture** commands fail with a protocol error, or the camera is not yet bound as a live hub child (common for sleeping solar cameras), the plugin may retry the same command directly on the camera's LAN IP when that address is known (`camera_host` or a saved host different from the hub).
 
 **Deduplication:** A powered camera that answers discovery on the LAN *and* is listed under a hub is represented once — as a hub child. When an H500 hub is configured, the plugin skips LAN camera discovery, purges stale standalone camera nodes on restart, and removes duplicate standalone nodes when the hub connects.
 
 **RTSP / external viewing:** IoX does not show video. For VLC or NVR software, configure a **Camera Account** in the Tapo app (per camera → Advanced Settings → Camera Account). python-kasa can build an RTSP URL when those credentials are available; the plugin does not store RTSP URLs in IoX drivers in this release.
 
-**Offline solar / battery cameras:** Hub-child cameras that sleep may show **Connected** = false and **Error** = **Not ready** until they wake. That includes empty `getDeviceInfo` on LAN and hub-deferred update paths that cannot reach the camera yet (not **Host unreachable**, and not **Error** = **OK**). When discover sees the camera awake on LAN, the plugin refreshes its saved LAN address and retries the update.
+**Offline solar / battery cameras:** Hub-child cameras that sleep may show **Connected** = false and **Error** = **Not ready** until they wake. That includes empty `getDeviceInfo` on LAN and hub-deferred update paths that cannot reach the camera yet (not **Host unreachable**, and not **Error** = **OK**). **Connected** is only “communicating,” not a hub-deferred indicator — see README **Hub-deferred cameras**.
+
+When a hub-deferred camera has no known LAN IP (`camera_host`), hub **short poll** runs a **targeted LAN rediscover** about every 30 seconds (independent of **`auto_discover`**) and saves the IP when the camera answers. **Query** on the hub or on that camera forces the same rediscover immediately. Long-poll Discover (when `auto_discover` is on) and manual **Discover** still help. **Set 24/7 Capture** needs a reachable camera (live hub child or known LAN IP). If rediscover never sees the camera (common for some solar models), add its IP under **Kasa devices** while awake.
 
 **Solar cameras (e.g. C675D) and Discover:** Battery/solar models often **do not answer UDP broadcast discovery** even when awake. They may still work by **IP**. Add each camera under **Kasa devices** (host `192.168.x.x`) while the camera is awake in the Tapo app, then restart the node server or run **Discover**. The plugin connects by IP and nests the camera under your H500 hub. Set the **Device name** column (or use `192.168.x.x - TapoName` in the host field) so IoX does not keep a generic `Kasa C675D` label when the first connect happens before Tapo returns the alias.
 

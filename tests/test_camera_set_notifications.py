@@ -98,7 +98,28 @@ def test_set_notifications_uses_resolved_hub_child():
     ) as set_notif:
         asyncio.run(node._set_notifications_a(True))
         set_notif.assert_awaited_once_with(child, True)
-        ctrl.discover_single.assert_not_called()
+
+
+def test_set_continuous_recording_falls_back_to_lan_when_unbound():
+    cfg = {
+        'type': 'DeviceType.Camera',
+        'hub_parent': 'ccbabd1606d8',
+        'hub_deferred': True,
+        'device_id': 'missing',
+        'mac': 'AA:BB:CC:DD:EE:FF',
+        'camera_host': '192.168.1.90',
+        'host': '192.168.1.48',
+    }
+    node, ctrl, _hub = _make_hub_camera(cfg=cfg, hub_children=[])
+    lan_dev = MagicMock()
+    ctrl.discover_single = AsyncMock(return_value=lan_dev)
+    with patch(
+        'nodes.SmartCameraNode.set_camera_continuous_recording_enabled',
+        new_callable=AsyncMock,
+    ) as set_cont:
+        asyncio.run(node._set_continuous_recording_a(True))
+        ctrl.discover_single.assert_awaited_once_with(host='192.168.1.90')
+        set_cont.assert_awaited_once_with(lan_dev, True)
 
 
 def test_set_on_does_not_set_st_when_write_fails():

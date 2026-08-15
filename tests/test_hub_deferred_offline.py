@@ -170,3 +170,162 @@ def test_mark_hub_deferred_offline_sets_not_ready():
     ctrl._set_host_device_err.assert_called_once_with(
         '192.168.1.107', ERR_NOT_READY
     )
+
+
+def test_hub_deferred_cameras_missing_lan_host():
+    ctrl = make_controller_stub()
+    ctrl.Data = {}
+    ctrl.get_device_cfg = MagicMock(return_value=None)
+    ctrl._deferred_hub_cameras = []
+
+    missing = MagicMock()
+    missing.id = 'SmartCamera_B'
+    missing.name = 'CamOutFrontEntry'
+    missing.host = None
+    missing.cfg = {
+        'hub_deferred': True,
+        'hub_parent': 'ccbabd1606d8',
+        'mac': '78:20:51:CD:41:38',
+        'host': None,
+    }
+    missing.primary_node = MagicMock(host='192.168.1.150')
+
+    known = MagicMock()
+    known.id = 'SmartCamera_B'
+    known.name = 'CamOutBackSouth'
+    known.host = '192.168.1.103'
+    known.cfg = {
+        'hub_deferred': True,
+        'hub_parent': 'ccbabd1606d8',
+        'mac': 'AC:A7:F1:DA:D8:2B',
+        'camera_host': '192.168.1.103',
+        'host': '192.168.1.103',
+    }
+    known.primary_node = MagicMock(host='192.168.1.150')
+
+    non_deferred = MagicMock()
+    non_deferred.id = 'SmartCamera_N'
+    non_deferred.cfg = {'host': '192.168.1.48'}
+
+    nodes = {
+        'front': missing,
+        'south': known,
+        'other': non_deferred,
+    }
+    ctrl.poly.getNodes.return_value = list(nodes.keys())
+    ctrl.poly.getNode.side_effect = lambda a: nodes.get(a)
+
+    found = Controller.hub_deferred_cameras_missing_lan_host(ctrl)
+    assert found == [missing]
+
+
+def test_rediscover_hub_deferred_missing_lan_skips_when_none_or_rate_limited():
+    ctrl = make_controller_stub()
+    ctrl.hub_deferred_cameras_missing_lan_host = MagicMock(return_value=[])
+    ctrl._discover_targets = MagicMock(return_value=['192.168.1.255'])
+
+    assert (
+        asyncio.get_event_loop().run_until_complete(
+            Controller.rediscover_hub_deferred_missing_lan_a(ctrl)
+        )
+        == 0
+    )
+    ctrl._discover_targets.assert_not_called()
+
+    node = MagicMock()
+    node.name = 'CamOutFrontEntry'
+    ctrl.hub_deferred_cameras_missing_lan_host = MagicMock(return_value=[node])
+    ctrl._hub_deferred_lan_rediscover_next = 1e12  # far future
+    assert (
+        asyncio.get_event_loop().run_until_complete(
+            Controller.rediscover_hub_deferred_missing_lan_a(ctrl)
+        )
+        == 0
+    )
+
+
+def test_rediscover_hub_deferred_missing_lan_runs_discover():
+    ctrl = make_controller_stub()
+    node = MagicMock()
+    node.name = 'CamOutFrontEntry'
+    ctrl.hub_deferred_cameras_missing_lan_host = MagicMock(return_value=[node])
+    ctrl._discover_targets = MagicMock(return_value=['192.168.1.255'])
+    ctrl._kasa_credentials = MagicMock(return_value=None)
+    ctrl._hub_deferred_lan_rediscover_next = 0.0
+
+    async def fake_discover(**kwargs):
+        # Simulate finding nothing; still prove Discover was invoked.
+        assert kwargs.get('discovery_timeout') == 5
+        assert kwargs.get('target') == '192.168.1.255'
+        assert kwargs.get('on_discovered') is ctrl._on_hub_deferred_lan_rediscover
+
+    with patch('nodes.Controller.kasa.Discover.discover', new=AsyncMock(side_effect=fake_discover)) as disc:
+        touched = asyncio.get_event_loop().run_until_complete(
+            Controller.rediscover_hub_deferred_missing_lan_a(ctrl, force=True)
+        )
+    assert touched == 0
+    disc.assert_awaited_once()
+    assert ctrl._hub_deferred_lan_rediscover_inflight is False
+    assert ctrl._hub_deferred_lan_rediscover_next > 0
+
+
+def test_camera_query_forces_lan_rediscover_when_hub_deferred():
+    ctrl = make_controller_stub()
+    ctrl.rediscover_hub_deferred_missing_lan_a = AsyncMock(return_value=1)
+
+    node = SmartCameraNode.__new__(SmartCameraNode)
+    node.pfx = 'Tapo:Cam:'
+    node.controller = ctrl
+    node.hub_deferred = True
+    node.set_state_a = AsyncMock()
+    node.reportDrivers = MagicMock()
+
+    asyncio.get_event_loop().run_until_complete(node._query_a())
+    ctrl.rediscover_hub_deferred_missing_lan_a.assert_awaited_once_with(
+        force=True
+    )
+    node.set_state_a.assert_awaited_once()
+    node.reportDrivers.assert_called_once()
+
+
+def test_camera_query_skips_rediscover_when_not_hub_deferred():
+    ctrl = make_controller_stub()
+    ctrl.rediscover_hub_deferred_missing_lan_a = AsyncMock(return_value=0)
+
+    node = SmartCameraNode.__new__(SmartCameraNode)
+    node.pfx = 'Cam:'
+    node.controller = ctrl
+    node.hub_deferred = False
+    node.set_state_a = AsyncMock()
+    node.reportDrivers = MagicMock()
+
+    asyncio.get_event_loop().run_until_complete(node._query_a())
+    ctrl.rediscover_hub_deferred_missing_lan_a.assert_not_called()
+    node.set_state_a.assert_awaited_once()
+
+
+def test_on_hub_deferred_lan_rediscover_closes_non_match():
+    ctrl = make_controller_stub()
+    ctrl._touch_hub_deferred_camera_from_lan = AsyncMock(return_value=False)
+    ctrl._close_device_quietly = AsyncMock()
+    ctrl._buffer_hub_cameras_for_adoption = MagicMock()
+    ctrl._hub_deferred_lan_rediscover_touched = 0
+
+    cam = MagicMock()
+    cam.device_type = 'DeviceType.Camera'
+    cam.host = '192.168.1.107'
+    asyncio.get_event_loop().run_until_complete(
+        Controller._on_hub_deferred_lan_rediscover(ctrl, cam)
+    )
+    ctrl._close_device_quietly.assert_awaited_once_with(cam)
+    assert ctrl._hub_deferred_lan_rediscover_touched == 0
+
+    ctrl._touch_hub_deferred_camera_from_lan = AsyncMock(return_value=True)
+    ctrl._close_device_quietly.reset_mock()
+    asyncio.get_event_loop().run_until_complete(
+        Controller._on_hub_deferred_lan_rediscover(ctrl, cam)
+    )
+    ctrl._close_device_quietly.assert_not_called()
+    assert ctrl._hub_deferred_lan_rediscover_touched == 1
+    ctrl._buffer_hub_cameras_for_adoption.assert_called()
+

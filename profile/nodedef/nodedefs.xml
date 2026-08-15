@@ -808,6 +808,7 @@
             <st id="GV0" editor="bool" />
             <st id="GV2" editor="bool" />
             <st id="GV4" editor="bool" />
+            <st id="GV5" editor="bool" />
             <st id="GV6" editor="bool" />
             <st id="GV1" editor="authcnt" />
             <st id="ERR" editor="kaserr" />
@@ -824,6 +825,9 @@
                 </cmd>
                 <cmd id="SET_NOTIFICATIONS">
                     <p id="" editor="bool" init="GV4" />
+                </cmd>
+                <cmd id="SET_CONTINUOUS_RECORDING">
+                    <p id="" editor="bool" init="GV5" />
                 </cmd>
             </accepts>
         </cmds>
@@ -837,6 +841,7 @@
             <st id="GV2" editor="bool" />
             <st id="GV3" editor="raw" />
             <st id="GV4" editor="bool" />
+            <st id="GV5" editor="bool" />
             <st id="GV6" editor="bool" />
             <st id="GV1" editor="authcnt" />
             <st id="ERR" editor="kaserr" />
@@ -853,6 +858,9 @@
                 </cmd>
                 <cmd id="SET_NOTIFICATIONS">
                     <p id="" editor="bool" init="GV4" />
+                </cmd>
+                <cmd id="SET_CONTINUOUS_RECORDING">
+                    <p id="" editor="bool" init="GV5" />
                 </cmd>
             </accepts>
         </cmds>

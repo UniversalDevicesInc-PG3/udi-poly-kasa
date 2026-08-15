@@ -198,10 +198,11 @@ def test_bootstrap_from_marker_pulls_when_enabled(mock_apply, tmp_path):
 @mock.patch('dev_python_kasa_bootstrap._run_git')
 def test_git_clone_or_pull_clone(mock_run_git, tmp_path):
     dest = tmp_path / bootstrap.CLONE_DIR_NAME
+    default_br = bootstrap.DEFAULT_BRANCH
 
     def fake_git(args, cwd=None):
         if args and args[0] == 'clone':
-            assert args[1:4] == ['--branch', 'master', '--single-branch']
+            assert args[1:4] == ['--branch', default_br, '--single-branch']
             dest.mkdir(parents=True)
             (dest / '.git').mkdir()
             (dest / 'kasa').mkdir()
@@ -226,6 +227,9 @@ def test_git_clone_or_pull_switches_branch(mock_run_git, tmp_path):
     (dest / '.git').mkdir()
     (dest / 'kasa').mkdir()
     calls = []
+    fetch_refspec = (
+        '+refs/heads/H500Hub:refs/remotes/origin/H500Hub'
+    )
 
     def fake_git(args, cwd=None):
         calls.append(list(args))
@@ -235,7 +239,7 @@ def test_git_clone_or_pull_switches_branch(mock_run_git, tmp_path):
             return 'abc123def456', None
         if args == ['rev-parse', '--abbrev-ref', 'HEAD']:
             return 'master', None
-        if args == ['fetch', 'origin', 'H500Hub']:
+        if args == ['fetch', 'origin', fetch_refspec]:
             return '', None
         if args == ['checkout', 'H500Hub']:
             return '', None
@@ -249,6 +253,7 @@ def test_git_clone_or_pull_switches_branch(mock_run_git, tmp_path):
     )
     assert err is None
     assert head == 'abc123def456'
+    assert ['fetch', 'origin', fetch_refspec] in calls
     assert ['checkout', 'H500Hub'] in calls
     assert ['pull', '--ff-only'] in calls
 
@@ -259,6 +264,10 @@ def test_git_clone_or_pull_ff_only_error_keeps_head(mock_run_git, tmp_path):
     dest.mkdir()
     (dest / '.git').mkdir()
     (dest / 'kasa').mkdir()
+    default_br = bootstrap.DEFAULT_BRANCH
+    fetch_refspec = (
+        f'+refs/heads/{default_br}:refs/remotes/origin/{default_br}'
+    )
 
     def fake_git(args, cwd=None):
         if args == ['config', '--get', 'remote.origin.url']:
@@ -266,8 +275,8 @@ def test_git_clone_or_pull_ff_only_error_keeps_head(mock_run_git, tmp_path):
         if args == ['rev-parse', 'HEAD']:
             return 'abc123def456', None
         if args == ['rev-parse', '--abbrev-ref', 'HEAD']:
-            return 'master', None
-        if args == ['fetch', 'origin', 'master']:
+            return default_br, None
+        if args == ['fetch', 'origin', fetch_refspec]:
             return '', None
         if args == ['pull', '--ff-only']:
             return None, 'not possible to fast-forward'

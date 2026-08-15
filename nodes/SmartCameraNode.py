@@ -4,13 +4,16 @@
 from udi_interface import LOGGER
 from camera_helpers import (
     battery_percent,
+    camera_continuous_recording_enabled,
     camera_lan_host,
     camera_nodedef_id,
     camera_notifications_enabled,
+    fetch_camera_record_plan_channel,
     hub_child_control_fallback_eligible,
     is_hub_child_camera_cfg,
     is_hub_deferred_camera_cfg,
     motion_detection_enabled,
+    set_camera_continuous_recording_enabled,
     set_camera_notifications_enabled,
 )
 from device_errors import ERR_NOT_READY, ERR_OK
@@ -39,6 +42,7 @@ class SmartCameraNode(SmartDeviceNode):
             {'driver': 'GV0', 'value': 0, 'uom': 2, 'name': 'Connected'},
             {'driver': 'GV2', 'value': 0, 'uom': 2, 'name': 'Motion Detection'},
             {'driver': 'GV4', 'value': 0, 'uom': 2, 'name': 'Notifications'},
+            {'driver': 'GV5', 'value': 0, 'uom': 2, 'name': '24/7 Capture'},
             {'driver': 'GV6', 'value': 1, 'uom': 2, 'name': 'Poll Device'},
         ]
         if dev is not None:
@@ -270,6 +274,32 @@ class SmartCameraNode(SmartDeviceNode):
             )
             await set_camera_notifications_enabled(lan_dev, enable)
 
+    async def _set_continuous_recording_a(self, enable):
+        """Toggle continuous 24/7 SD capture (off switches to motion 24/7)."""
+        dev = self.dev
+        if self.hub_child:
+            dev = await self._resolve_hub_child_dev()
+        if dev is None and self.hub_child:
+            lan_dev = await self._discover_camera_lan_dev(
+                reason='hub child not bound for 24/7 capture',
+            )
+            await set_camera_continuous_recording_enabled(lan_dev, enable)
+            return
+        if dev is None:
+            raise DeviceError(f'{self.pfx} device not connected for 24/7 capture')
+
+        try:
+            await set_camera_continuous_recording_enabled(dev, enable)
+            return
+        except DeviceError as ex:
+            if not self.hub_child or not hub_child_control_fallback_eligible(ex):
+                raise
+            lan_dev = await self._discover_camera_lan_dev(
+                reason=f'hub child set 24/7 capture failed ({ex})',
+                cause=ex,
+            )
+            await set_camera_continuous_recording_enabled(lan_dev, enable)
+
     async def set_notifications_a(self, enable):
         LOGGER.debug('%s enter enable=%s', self.pfx, enable)
         if self.dev is None and not self.hub_child:
@@ -282,6 +312,54 @@ class SmartCameraNode(SmartDeviceNode):
 
     def set_notifications(self, enable):
         self._run_coro(self.set_notifications_a(bool(enable)), 'set_notifications_a')
+
+    def _continuous_recording_notice_key(self):
+        return f'cont_rec_{self.address}'
+
+    def _clear_continuous_recording_notice(self):
+        key = self._continuous_recording_notice_key()
+        try:
+            self.poly.Notices.delete(key)
+        except Exception:
+            pass
+
+    def _set_continuous_recording_notice(self, message):
+        key = self._continuous_recording_notice_key()
+        try:
+            self.poly.Notices[key] = message
+        except Exception:
+            LOGGER.warning('%s could not set notice: %s', self.pfx, message)
+
+    async def set_continuous_recording_a(self, enable):
+        LOGGER.debug('%s enter enable=%s', self.pfx, enable)
+        if self.dev is None and not self.hub_child:
+            raise DeviceError(f'{self.pfx} device not connected for 24/7 capture')
+        try:
+            await self._set_continuous_recording_a(bool(enable))
+        except DeviceError as ex:
+            msg = str(ex)
+            if 'no camera LAN host' in msg:
+                self._set_continuous_recording_notice(
+                    f'{self.name}: cannot set 24/7 Capture — camera has no '
+                    f'known LAN IP (hub lists no child). The node server '
+                    f'hunts for it on short poll while awake; or add its IP '
+                    f'under Kasa devices / run Discover, then retry.'
+                )
+            else:
+                self._set_continuous_recording_notice(
+                    f'{self.name}: 24/7 Capture failed: {ex}'
+                )
+            raise
+        self._clear_continuous_recording_notice()
+        self.setDriver('GV5', 1 if enable else 0)
+        await self.set_state_a(set_energy=False)
+        LOGGER.debug('%s exit', self.pfx)
+
+    def set_continuous_recording(self, enable):
+        self._run_coro(
+            self.set_continuous_recording_a(bool(enable)),
+            'set_continuous_recording_a',
+        )
 
     async def set_on_a(self):
         LOGGER.debug(f'{self.pfx} enter')
@@ -328,6 +406,18 @@ class SmartCameraNode(SmartDeviceNode):
             notifications = camera_notifications_enabled(self.dev)
             if notifications is not None:
                 self.setDriver('GV4', 1 if notifications else 0)
+            # Record plan is a separate query (not in modular update). Skip when
+            # hub-deferred cams are offline / have no LAN host to avoid hanging
+            # the shared asyncio loop during short poll.
+            if self.dev is not None and (
+                not self.hub_deferred or self.connected
+            ):
+                channel = await fetch_camera_record_plan_channel(self.dev)
+                continuous = camera_continuous_recording_enabled(
+                    self.dev, channel=channel
+                )
+                if continuous is not None:
+                    self.setDriver('GV5', 1 if continuous else 0)
             if self.id == 'SmartCamera_B':
                 level = battery_percent(self.dev)
                 if level is not None:
@@ -336,6 +426,24 @@ class SmartCameraNode(SmartDeviceNode):
                 self.reconnected()
         except Exception as ex:
             LOGGER.error(f'{self.pfx} set_state_a failed: {ex}', exc_info=True)
+
+    def query(self):
+        """Force LAN rediscover for hub-deferred cams missing camera_host, then refresh."""
+        LOGGER.info(f'{self.pfx} enter')
+        LOGGER.info(f'{self.pfx} waiting for query results...')
+        res = self._run_coro(self._query_a(), 'query/_query_a')
+        LOGGER.info(f'{self.pfx} res={res}')
+        LOGGER.info(f'{self.pfx} exit')
+
+    async def _query_a(self):
+        if self.hub_deferred:
+            # Immediate hunt (bypass short-poll rate limit) so Query can catch
+            # a brief wake window even when auto_discover is off.
+            await self.controller.rediscover_hub_deferred_missing_lan_a(
+                force=True
+            )
+        await self.set_state_a(set_energy=True)
+        self.reportDrivers()
 
     def cmd_set_on(self, command):
         super().cmd_set_on(command)
@@ -351,9 +459,15 @@ class SmartCameraNode(SmartDeviceNode):
         LOGGER.debug('%s SET_NOTIFICATIONS val=%s', self.pfx, val)
         self.set_notifications(bool(val))
 
+    def cmd_set_continuous_recording(self, command):
+        val = int(command.get('value'))
+        LOGGER.debug('%s SET_CONTINUOUS_RECORDING val=%s', self.pfx, val)
+        self.set_continuous_recording(bool(val))
+
     commands = {
         'DON': cmd_set_on,
         'DOF': cmd_set_off,
         'SET_MON': cmd_set_mon,
         'SET_NOTIFICATIONS': cmd_set_notifications,
+        'SET_CONTINUOUS_RECORDING': cmd_set_continuous_recording,
     }

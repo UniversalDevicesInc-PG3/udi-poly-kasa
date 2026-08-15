@@ -37,6 +37,12 @@ def make_controller_stub(**overrides):
     ctrl._hub_update_locks = {}
     ctrl._hub_update_cache = {}
     ctrl.host_quick_probe_interval = 30.0
+    ctrl.hub_deferred_lan_rediscover_interval = 30.0
+    ctrl.hub_deferred_lan_rediscover_timeout = 5
+    ctrl._hub_deferred_lan_rediscover_next = 0.0
+    ctrl._hub_deferred_lan_rediscover_inflight = False
+    ctrl._hub_deferred_lan_rediscover_touched = 0
+    ctrl._deferred_hub_cameras = []
     ctrl.manual_networks = []
     ctrl.manual_devices = []
     ctrl.poly = MagicMock()

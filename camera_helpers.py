@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import base64
+import json
 
 from strip_models import normalize_model
 
@@ -141,6 +142,182 @@ async def set_camera_notifications_enabled(dev, enable):
             'msg_push': {'chn1_msg_push_info': params},
         }
     })
+
+
+# Tapo local SD record plan (getRecordPlan / setRecordPlan).
+# Slot suffix :1 = continuous, :2 = on detection/motion.
+_RECORD_PLAN_DAYS = (
+    'sunday',
+    'monday',
+    'tuesday',
+    'wednesday',
+    'thursday',
+    'friday',
+    'saturday',
+)
+_RECORD_SLOT_CONTINUOUS_24_7 = '0000-2400:1'
+_RECORD_SLOT_MOTION_24_7 = '0000-2400:2'
+
+
+def _parse_record_day_slots(day_val):
+    """Return list of schedule slot strings for one weekday."""
+    if day_val is None:
+        return []
+    if isinstance(day_val, list):
+        return [str(s) for s in day_val]
+    if isinstance(day_val, str):
+        text = day_val.strip()
+        if not text:
+            return []
+        try:
+            parsed = json.loads(text)
+        except Exception:
+            return [text]
+        if isinstance(parsed, list):
+            return [str(s) for s in parsed]
+        return [str(parsed)]
+    return [str(day_val)]
+
+
+def _day_is_continuous_24_7(day_val):
+    """True when the day schedule is continuous recording for the full day."""
+    slots = _parse_record_day_slots(day_val)
+    return _RECORD_SLOT_CONTINUOUS_24_7 in slots
+
+
+def _record_plan_channel_from_payload(payload):
+    """Extract chn1_channel dict from a getRecordPlan-style payload."""
+    if not isinstance(payload, dict):
+        return None
+    plan = payload.get('record_plan') or payload
+    if not isinstance(plan, dict):
+        return None
+    channel = plan.get('chn1_channel')
+    return channel if isinstance(channel, dict) else None
+
+
+def _record_plan_channel_from_last_update(dev):
+    """Return chn1_channel from the last device update, if present."""
+    last = getattr(dev, '_last_update', None) or {}
+    return _record_plan_channel_from_payload(last.get('getRecordPlan'))
+
+
+def camera_supports_record_plan(dev):
+    """True when the device advertises the local ``record`` component."""
+    if dev is None:
+        return False
+    components = getattr(dev, '_components', None) or {}
+    if isinstance(components, dict):
+        if 'record' in components:
+            return True
+        # Negotiated component list without record → unsupported.
+        if components:
+            return False
+    # Components not loaded yet; allow a probe when a protocol is present.
+    return getattr(dev, 'protocol', None) is not None
+
+
+def camera_continuous_recording_enabled(dev, channel=None):
+    """Return whether local SD recording is continuous 24/7, or None.
+
+    True when ``enabled`` is on and every weekday is ``0000-2400:1``
+    (Tapo continuous capture). False when recording is off or scheduled as
+    detection/motion (``:2``) / other plans. None when the plan is unknown.
+    """
+    if channel is None:
+        if dev is None:
+            return None
+        channel = _record_plan_channel_from_last_update(dev)
+    if not channel:
+        return None
+    if str(channel.get('enabled', 'off')).lower() != 'on':
+        return False
+    return all(_day_is_continuous_24_7(channel.get(day)) for day in _RECORD_PLAN_DAYS)
+
+
+async def fetch_camera_record_plan_channel(dev):
+    """Query getRecordPlan and cache it on ``dev._last_update``; return channel."""
+    if dev is None:
+        return None
+    cached = _record_plan_channel_from_last_update(dev)
+    if cached is not None:
+        return cached
+    if not camera_supports_record_plan(dev):
+        return None
+    params = {'record_plan': {'name': ['chn1_channel']}}
+    helper = getattr(dev, '_query_helper', None)
+    try:
+        if callable(helper):
+            resp = await helper('getRecordPlan', params)
+        else:
+            protocol = getattr(dev, 'protocol', None)
+            if protocol is None:
+                return None
+            resp = await protocol.query({'getRecordPlan': params})
+    except Exception:
+        return None
+    if not isinstance(resp, dict):
+        return None
+    # SmartDevice._query_helper wraps as {method: ...}; protocol.query may too.
+    payload = resp.get('getRecordPlan', resp)
+    channel = _record_plan_channel_from_payload(payload)
+    if channel is None and 'chn1_channel' in resp:
+        channel = resp.get('chn1_channel') if isinstance(resp.get('chn1_channel'), dict) else None
+    if channel is None:
+        return None
+    last = getattr(dev, '_last_update', None)
+    if not isinstance(last, dict):
+        last = {}
+        try:
+            dev._last_update = last
+        except Exception:
+            pass
+    last['getRecordPlan'] = {'record_plan': {'chn1_channel': channel}}
+    return channel
+
+
+async def set_camera_continuous_recording_enabled(dev, enable):
+    """Enable continuous 24/7 SD capture, or switch to motion 24/7 when off.
+
+    On: all days ``0000-2400:1`` with plan enabled.
+    Off: all days ``0000-2400:2`` (detection recording) with plan enabled.
+    """
+    if dev is None:
+        raise ValueError('device is required')
+    slot = (
+        _RECORD_SLOT_CONTINUOUS_24_7 if enable else _RECORD_SLOT_MOTION_24_7
+    )
+    day_json = json.dumps([slot])
+    params = {'enabled': 'on'}
+    for day in _RECORD_PLAN_DAYS:
+        params[day] = day_json
+    helper = getattr(dev, '_query_setter_helper', None)
+    if callable(helper):
+        result = await helper(
+            'setRecordPlan',
+            'record_plan',
+            'chn1_channel',
+            params,
+        )
+    else:
+        protocol = getattr(dev, 'protocol', None)
+        if protocol is None:
+            raise RuntimeError('device does not support record plan control')
+        result = await protocol.query({
+            'setRecordPlan': {
+                'record_plan': {'chn1_channel': params},
+            }
+        })
+    # Keep status cache in sync with the write we just sent.
+    last = getattr(dev, '_last_update', None)
+    if not isinstance(last, dict):
+        last = {}
+        try:
+            dev._last_update = last
+        except Exception:
+            pass
+    last['getRecordPlan'] = {'record_plan': {'chn1_channel': dict(params)}}
+    return result
 
 
 def battery_percent(dev):

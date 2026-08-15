@@ -29,8 +29,11 @@ install_nested_python_kasa() {
   if [ -d python-kasa/.git ]; then
     echo "Updating nested python-kasa ($PYTHON_KASA_BRANCH)..."
     git -C python-kasa remote set-url origin "$PYTHON_KASA_REPO" 2>/dev/null || true
-    git -C python-kasa fetch --depth 1 origin "$PYTHON_KASA_BRANCH"
-    git -C python-kasa checkout -B "$PYTHON_KASA_BRANCH" "FETCH_HEAD"
+    # Explicit refspec: --single-branch clones only track one origin/* ref.
+    git -C python-kasa fetch --depth 1 origin \
+      "+refs/heads/${PYTHON_KASA_BRANCH}:refs/remotes/origin/${PYTHON_KASA_BRANCH}"
+    git -C python-kasa checkout -B "$PYTHON_KASA_BRANCH" \
+      "origin/${PYTHON_KASA_BRANCH}"
   else
     echo "Cloning nested python-kasa ($PYTHON_KASA_BRANCH)..."
     rm -rf python-kasa

@@ -242,8 +242,22 @@ class SmartHubNode(SmartDeviceNode):
 
     async def set_state_a(self, set_energy=True):
         LOGGER.debug(f'{self.pfx} enter')
-        if await self.update_a():
+        hub_ok = await self.update_a()
+        # Hunt for hub-deferred cameras that still lack a LAN IP. Independent
+        # of auto_discover so a brief wake window is more likely to be caught
+        # on short poll even when full Discover is disabled.
+        await self.controller.rediscover_hub_deferred_missing_lan_a()
+        if hub_ok:
             await self.set_children_drivers_a()
+        else:
+            # Hub protocol failed, but deferred children may still update via
+            # a freshly learned camera_host from the rediscover above.
+            for node in self.child_nodes:
+                if not self._is_hub_camera_child(node):
+                    continue
+                if not getattr(node, 'hub_deferred', False):
+                    continue
+                await node.set_state_a(set_energy=False)
         LOGGER.debug(f'{self.pfx} exit')
 
     async def set_children_drivers_a(self):
@@ -251,6 +265,22 @@ class SmartHubNode(SmartDeviceNode):
             if not self._is_hub_camera_child(node):
                 continue
             await node.set_state_a(set_energy=False)
+
+    def query(self):
+        """Force hub-deferred LAN rediscover, then refresh hub + children."""
+        LOGGER.info(f'{self.pfx} enter')
+        LOGGER.info(f'{self.pfx} waiting for query results...')
+        res = self._run_coro(self._query_a(), 'query/_query_a')
+        LOGGER.info(f'{self.pfx} res={res}')
+        LOGGER.info(f'{self.pfx} exit')
+
+    async def _query_a(self):
+        # Immediate hunt for deferred children missing camera_host (bypass
+        # short-poll rate limit). set_state_a also rediscovers but is rate-
+        # limited after this force pass.
+        await self.controller.rediscover_hub_deferred_missing_lan_a(force=True)
+        await self.set_state_a(set_energy=True)
+        self.reportDrivers()
 
     def cmd_set_on(self, command):
         LOGGER.debug(f'{self.pfx} hub has no on/off; ignoring DON')

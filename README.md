@@ -71,9 +71,9 @@ Advanced override parameters (usually leave defaults):
 
 - **`dev_python_kasa`** — `true` / `false` (default `true` in 3.3.31+).
 - **`dev_python_kasa_repo`** — git URL (default `https://github.com/jimboca/python-kasa.git`).
-- **`dev_python_kasa_branch`** — git branch (default `tpap-gmpy2-mpz-fix`).
+- **`dev_python_kasa_branch`** — git branch (default `tpap-gmpy2-mpz-fix` for TPAP plugs such as KP125M). Use **`H500Hub`** only when you need Tapo H500 hub/camera library fixes that are not on the TPAP branch yet; see **CONFIG.md**.
 
-Changing these restarts the Node Server; while enabled, each start checks out the branch and runs `git pull --ff-only` before kasa loads. See **CONFIG.md**.
+Changing these restarts the Node Server automatically (including when you change **`dev_python_kasa_branch`**); while enabled, each start checks out the branch and runs `git pull --ff-only` before kasa loads. See **CONFIG.md**.
 
 ## Kasa Devices
 
@@ -95,13 +95,49 @@ If you have another device not listed and it is working properly please let me k
 
 ### Tapo cameras and hubs
 
-Tapo cameras appear as IoX nodes with **Camera State** (privacy lens on/off), **Connected**, **Motion Detection** (whether motion alerts are armed in the Tapo app — not live motion events), and **Notifications** (Tapo/Kasa app push alerts). Use **Set Notifications** to mute app alerts while the camera keeps recording and detecting. Battery-powered models also expose **Battery Level**. IoX shows them with the **MotionSensor** icon (profile 2.1.0.15+).
+Tapo cameras appear as IoX nodes with **Camera State** (privacy lens on/off), **Connected**, **Motion Detection** (whether motion alerts are armed in the Tapo app — not live motion events), **Notifications** (Tapo/Kasa app push alerts), and **24/7 Capture** (continuous SD recording vs detection recording). Use **Set Notifications** to mute app alerts while the camera keeps recording and detecting. Use **Set 24/7 Capture** to switch between continuous all-day recording and detection recording. Battery-powered models also expose **Battery Level**. IoX shows them with the **MotionSensor** icon (profile 2.1.0.17+).
 
 - **Standalone cameras** on your LAN are added as top-level nodes.
 - **Hub-paired cameras** (e.g. on an H500) are added as children under the hub node (each camera keeps its own MAC as the IoX address). If the same camera is visible both ways, the plugin keeps the hub-child node and removes the duplicate standalone node.
 - **Solar / sleeping cameras** may show disconnected while offline; they reconnect when they wake.
 
 IoX cannot display video streams. To view RTSP locally, use the Tapo app's **Camera Account** credentials (Advanced Settings) with an external player (VLC, Frigate, etc.). The plugin uses your TP-Link cloud **user** / **password** for device control.
+
+#### Hub-deferred cameras
+
+On Tapo H500 (and similar hubs), the local hub API often reports paired cameras (`child_num > 0`) but returns an **empty** `getChildDeviceList`. The plugin still creates hub-child camera nodes from the **Tapo cloud roster** and/or LAN Discover, but marks them **hub-deferred**: control and status go over the camera’s own Wi‑Fi IP (`camera_host`), not through hub `controlChild`.
+
+**How to tell a camera is hub-deferred**
+
+| Signal | Meaning |
+|--------|---------|
+| Nested under the hub in IoX | Hub-paired (may or may not be deferred) |
+| **Connected** = false and **Error** = **Not ready** | Typical sleeping / not-yet-reachable hub-deferred cam (not “hub-deferred” by itself) |
+| **Connected** = true | Camera answered on LAN (or as a live hub child); deferred flag may still be set in saved config |
+| Polyglot notice about no known LAN IP / 24/7 Capture | Hub-deferred cam with no `camera_host` yet |
+| Plugin logs `hub-deferred` / `hub lists no child` | Confirms deferred update path |
+
+**Connected does not mean “hub-deferred.”** **Connected** only means the node communicated successfully on the last update. Hub-deferred is an internal/saved config flag (`hub_deferred`), not a separate IoX status. Use nesting under the hub plus **Error** = **Not ready** (while asleep) as the practical operator clues.
+
+**How the plugin finds a sleeping camera’s IP**
+
+1. Saved `camera_host` / host (from a previous wake or **Kasa devices** row).
+2. Hub short-poll **targeted LAN rediscover** (~every 30s) when any hub-deferred cam still has no LAN IP — runs even if **`auto_discover` is off**.
+3. **Query** on the hub or on a hub-deferred camera — same LAN rediscover, forced immediately (bypasses the short-poll rate limit).
+4. Long-poll Discover when **`auto_discover` is on**, or a manual **Discover**.
+5. Manual IP under **Kasa devices**.
+
+When Discover sees a known hub camera awake, the plugin saves `camera_host`, sets **Connected**, and clears **Not ready**.
+
+**How to fix a stuck hub-deferred camera**
+
+1. Wake the camera in the Tapo app (live view) so it joins Wi‑Fi.
+2. Prefer: press **Query** on that camera (or the hub), or wait one short-poll cycle / run **Discover**, and confirm **Connected** becomes true.
+3. If solar models never show up on Discover (common for C675D): add the camera’s IP under **Kasa devices** while awake, then restart or **Discover**.
+4. Confirm **user** / **password** are the TP-Link cloud account (same as the Tapo app), not a Camera Account / RTSP login.
+5. Do not expect hub LAN `controlChild` to wake or control these models on current H500 firmware — the plugin uses direct LAN once the IP is known.
+
+**Commands (privacy, notifications, 24/7 Capture)** need a reachable camera (live hub child or known LAN IP). Sleeping hub-deferred cams with no `camera_host` cannot change those settings until an IP is learned.
 
 ### Unknown devices
 
@@ -143,7 +179,8 @@ The settings for this node are
 #### Status (ST)
   * Status of device, on, off, or brightness.
 #### Connected (GV0)
-  * True if device is communicating
+  * True if device is communicating. Does **not** indicate hub-deferred mode
+    (see **Hub-deferred cameras** above).
 #### Poll Device
   * If the device is going to be unplugged for a while, set this to False so node server will stop attempting to poll.
 #### Many others
@@ -186,7 +223,9 @@ Read-only counter of consecutive authentication failures for the device host. Re
 The commands for these nodes
 
 #### Query
-  * Poll's all devices and sets all status in the ISY
+  * Refresh this device’s status. On a **hub-deferred** camera (or the **hub**),
+    also forces a LAN rediscover for deferred cams missing a LAN IP — useful
+    right after waking the camera in the Tapo app (see **Hub-deferred cameras**).
 #### On, Off
   * Turn device on or off
 

@@ -155,13 +155,19 @@ def git_current_branch(repo_dir):
 
 
 def _checkout_branch(repo_dir, branch):
-    """Fetch and check out branch (local or origin/<branch>)."""
-    _, err = _run_git(['fetch', 'origin', branch], cwd=repo_dir)
+    """Fetch and check out branch (local or origin/<branch>).
+
+    Nested clones from install.sh / git_clone_or_pull use ``--single-branch``,
+    so ``git fetch origin <branch>`` only updates FETCH_HEAD and does not create
+    ``origin/<branch>``. Always fetch with an explicit refspec.
+    """
+    _, err = _run_git([
+        'fetch',
+        'origin',
+        f'+refs/heads/{branch}:refs/remotes/origin/{branch}',
+    ], cwd=repo_dir)
     if err:
-        # Fall back to a full fetch when the named ref is missing locally.
-        _, fetch_err = _run_git(['fetch', 'origin'], cwd=repo_dir)
-        if fetch_err:
-            return fetch_err
+        return err
 
     current, err = git_current_branch(repo_dir)
     if err:

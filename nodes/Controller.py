@@ -39,6 +39,7 @@ from dev_python_kasa_bootstrap import (
     clone_dir,
     default_branch,
     default_repo_url,
+    git_current_branch,
     param_enabled,
     params_require_restart,
     read_marker,
@@ -165,6 +166,14 @@ class Controller(Node):
         # multiple unreachable hosts add up to less mainloop blocking before
         # the breaker trips.
         self.discover_single_timeout = 3
+        # Targeted LAN rediscover for hub-deferred cameras that have no
+        # camera_host yet. Runs from hub shortPoll (independent of
+        # auto_discover) so a brief wake window is more likely to be caught.
+        self.hub_deferred_lan_rediscover_interval = 30.0
+        self.hub_deferred_lan_rediscover_timeout = 5
+        self._hub_deferred_lan_rediscover_next = 0.0
+        self._hub_deferred_lan_rediscover_inflight = False
+        self._hub_deferred_lan_rediscover_touched = 0
         # Serialize async addNode calls (Ecobee pattern); wait_for_node_done
         # blocks until ADDNODEDONE fires for the pending add.
         self.n_queue = []
@@ -3247,6 +3256,107 @@ class Controller(Node):
             return node_host
         return None
 
+    def hub_deferred_cameras_missing_lan_host(self):
+        """Hub-deferred SmartCamera nodes with no usable LAN IP yet."""
+        missing = []
+        for addr in self.poly.getNodes() or []:
+            node = self.poly.getNode(addr)
+            if node is None or not getattr(node, 'id', '').startswith('SmartCamera_'):
+                continue
+            cfg = getattr(node, 'cfg', None) or {}
+            if not is_hub_deferred_camera_cfg(cfg):
+                continue
+            hub_host = None
+            primary = getattr(node, 'primary_node', None)
+            if primary is not None:
+                hub_host = getattr(primary, 'host', None)
+            lan = self.lan_host_for_hub_camera(
+                mac=cfg.get('mac'),
+                cfg=cfg,
+                hub_host=hub_host,
+                node_host=getattr(node, 'host', None),
+            )
+            if not lan:
+                missing.append(node)
+        return missing
+
+    async def _on_hub_deferred_lan_rediscover(self, dev):
+        """Adopt LAN IP for a known hub-deferred camera; close other devices."""
+        keep_dev = False
+        try:
+            if str(getattr(dev, 'device_type', None)) != 'DeviceType.Camera':
+                return
+            if await self._touch_hub_deferred_camera_from_lan(dev):
+                keep_dev = True
+                self._hub_deferred_lan_rediscover_touched += 1
+                self._buffer_hub_cameras_for_adoption([dev])
+        except Exception as ex:
+            LOGGER.debug(
+                'hub-deferred LAN rediscover callback failed for %s: %s',
+                getattr(dev, 'host', None),
+                ex,
+            )
+        finally:
+            if not keep_dev:
+                await self._close_device_quietly(dev)
+
+    async def rediscover_hub_deferred_missing_lan_a(self, *, force=False):
+        """Bounded LAN discover for hub-deferred cams with no camera_host.
+
+        Independent of ``auto_discover``. Coalesced / rate-limited so hub
+        shortPoll does not start overlapping subnet sweeps.
+        """
+        if self._hub_deferred_lan_rediscover_inflight:
+            return 0
+        now = time.monotonic()
+        if not force and now < self._hub_deferred_lan_rediscover_next:
+            return 0
+        missing = self.hub_deferred_cameras_missing_lan_host()
+        if not missing:
+            return 0
+        self._hub_deferred_lan_rediscover_inflight = True
+        self._hub_deferred_lan_rediscover_next = (
+            now + self.hub_deferred_lan_rediscover_interval
+        )
+        self._hub_deferred_lan_rediscover_touched = 0
+        names = [
+            getattr(n, 'name', getattr(n, 'address', '?')) for n in missing[:6]
+        ]
+        LOGGER.info(
+            'Hub-deferred LAN rediscover: %s camera(s) missing LAN IP%s',
+            len(missing),
+            f' ({", ".join(names)}{"…" if len(missing) > 6 else ""})',
+        )
+        try:
+            timeout = int(self.hub_deferred_lan_rediscover_timeout)
+            for target in self._discover_targets():
+                try:
+                    await kasa.Discover.discover(
+                        credentials=self._kasa_credentials(),
+                        target=target,
+                        discovery_timeout=timeout,
+                        on_discovered=self._on_hub_deferred_lan_rediscover,
+                    )
+                except Exception as ex:
+                    LOGGER.warning(
+                        'Hub-deferred LAN rediscover failed for %s: %s',
+                        target,
+                        ex,
+                    )
+            touched = self._hub_deferred_lan_rediscover_touched
+            if touched:
+                LOGGER.info(
+                    'Hub-deferred LAN rediscover: refreshed %s camera(s)',
+                    touched,
+                )
+            else:
+                LOGGER.debug(
+                    'Hub-deferred LAN rediscover: no missing cameras answered'
+                )
+            return touched
+        finally:
+            self._hub_deferred_lan_rediscover_inflight = False
+
     def _buffer_hub_cameras_for_adoption(self, camera_devs):
         """Remember LAN cameras to nest under the hub when its child list is empty."""
         if not camera_devs:
@@ -4947,7 +5057,15 @@ class Controller(Node):
         link = symlink_path(plugin_dir)
         repo = clone_dir(plugin_dir)
         if enabled:
-            return not os.path.islink(link)
+            if not os.path.islink(link):
+                return True
+            # Recover when params/marker say one branch but the single-branch
+            # clone is still on another (failed H500Hub switch, etc.).
+            desired = default_branch(self.Parameters.get('dev_python_kasa_branch'))
+            current, err = git_current_branch(repo)
+            if not err and current and current != desired:
+                return True
+            return False
         return os.path.lexists(link) or os.path.exists(repo)
 
     def _dev_python_kasa_notice(self, enabled, repo_url, branch, result):
@@ -4981,13 +5099,15 @@ class Controller(Node):
         result = apply_dev_python_kasa(
             plugin_dir, enabled, repo_url=repo_url, branch=branch
         )
-        sync_marker(plugin_dir, enabled, repo_url, result, branch=branch)
-
         if result.get('error'):
+            # Keep the previous marker so the next start still retries the
+            # desired branch (do not record a failed switch as success).
             self.poly.Notices['dev_python_kasa'] = (
                 f'Dev python-kasa setup failed: {result["error"]}'
             )
             return
+
+        sync_marker(plugin_dir, enabled, repo_url, result, branch=branch)
 
         if restart_needed or state_mismatch or result.get('changed'):
             self.poly.Notices['dev_python_kasa'] = self._dev_python_kasa_notice(

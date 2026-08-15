@@ -7,6 +7,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.3.33] - 2026-08-15
+
+### Added
+
+- **Camera 24/7 Capture:** status **24/7 Capture** and command **Set 24/7 Capture**
+  on `SmartCamera_N` / `SmartCamera_B` (profile **2.1.0.17**). Reads/writes the
+  Tapo local SD `record_plan` (continuous `0000-2400:1` vs detection
+  `0000-2400:2`). Hub-child LAN fallback matches privacy / notifications.
+  Offline hub-deferred cameras without a LAN IP get a clear notice instead of
+  a silent failure; record-plan polls are skipped while those cams are offline.
+- **Hub-deferred LAN rediscover on short poll:** when any hub-deferred camera
+  still has no `camera_host`, hub short poll runs a bounded subnet Discover
+  (~every 30s), independent of `auto_discover`, and refreshes the LAN IP when
+  the camera answers. **Query** on the hub or a hub-deferred camera forces the
+  same rediscover immediately. Documented in README (**Hub-deferred cameras**)
+  and CONFIG.
+
+### Changed
+
+- **CONFIG.md:** `dev_python_kasa_branch` documents when to use
+  `tpap-gmpy2-mpz-fix` (default, TPAP plugs) vs `H500Hub` (Tapo hub/camera
+  library fixes); the two trees are not interchangeable yet.
+- **Nested python-kasa branch switch:** checkout now fetches
+  `origin/<branch>` with an explicit refspec so switching from the
+  single-branch TPAP clone to `H500Hub` (or any other branch) works.
+  Failed switches no longer write the marker as success; a checkout vs
+  param mismatch is retried on the next start. Changing
+  `dev_python_kasa_branch` still auto-restarts the Node Server.
+
 ## [3.3.32] - 2026-08-07
 
 ### Fixed
