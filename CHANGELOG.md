@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.3.35] - 2026-10-18
+
+### Fixed
+
+- **Nested python-kasa update:** when `git pull --ff-only` cannot fast-forward
+  because the local checkout and `dev_python_kasa_repo` have diverged, the
+  plugin deletes that nested clone and checks the configured branch out again.
+  Other git failures, such as the host being unreachable, leave the existing
+  checkout in place.
+
 ## [3.3.34] - 2026-10-18
 
 ### Fixed

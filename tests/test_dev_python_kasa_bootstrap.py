@@ -259,7 +259,55 @@ def test_git_clone_or_pull_switches_branch(mock_run_git, tmp_path):
 
 
 @mock.patch('dev_python_kasa_bootstrap._run_git')
-def test_git_clone_or_pull_ff_only_error_keeps_head(mock_run_git, tmp_path):
+def test_git_clone_or_pull_ff_only_divergence_reclones(mock_run_git, tmp_path):
+    dest = tmp_path / bootstrap.CLONE_DIR_NAME
+    dest.mkdir()
+    (dest / '.git').mkdir()
+    (dest / 'kasa').mkdir()
+    default_br = bootstrap.DEFAULT_BRANCH
+    fetch_refspec = (
+        f'+refs/heads/{default_br}:refs/remotes/origin/{default_br}'
+    )
+    pulls = {'n': 0}
+
+    def fake_git(args, cwd=None):
+        if args and args[0] == 'clone':
+            assert args[1:4] == ['--branch', default_br, '--single-branch']
+            dest.mkdir(parents=True)
+            (dest / '.git').mkdir()
+            (dest / 'kasa').mkdir()
+            return '', None
+        if args == ['config', '--get', 'remote.origin.url']:
+            return bootstrap.DEFAULT_REPO_URL, None
+        if args == ['rev-parse', 'HEAD']:
+            if pulls['n']:
+                return 'feedface' * 5, None
+            return 'abc123def456', None
+        if args == ['rev-parse', '--abbrev-ref', 'HEAD']:
+            return default_br, None
+        if args == ['fetch', 'origin', fetch_refspec]:
+            return '', None
+        if args == ['pull', '--ff-only']:
+            pulls['n'] += 1
+            return None, (
+                'hint: Diverging branches can\'t be fast-forwarded\n'
+                'fatal: Not possible to fast-forward, aborting.'
+            )
+        return None, f'unexpected git {args}'
+
+    mock_run_git.side_effect = fake_git
+    changed, head, err = bootstrap.git_clone_or_pull(
+        str(dest), bootstrap.DEFAULT_REPO_URL
+    )
+    assert err is None
+    assert changed is True
+    assert head == 'feedface' * 5
+    assert pulls['n'] == 1
+    assert (dest / '.git').is_dir()
+
+
+@mock.patch('dev_python_kasa_bootstrap._run_git')
+def test_git_clone_or_pull_other_pull_error_keeps_clone(mock_run_git, tmp_path):
     dest = tmp_path / bootstrap.CLONE_DIR_NAME
     dest.mkdir()
     (dest / '.git').mkdir()
@@ -279,11 +327,14 @@ def test_git_clone_or_pull_ff_only_error_keeps_head(mock_run_git, tmp_path):
         if args == ['fetch', 'origin', fetch_refspec]:
             return '', None
         if args == ['pull', '--ff-only']:
-            return None, 'not possible to fast-forward'
+            return None, 'Could not resolve host: github.com'
         return None, f'unexpected git {args}'
 
     mock_run_git.side_effect = fake_git
-    changed, head, err = bootstrap.git_clone_or_pull(str(dest), bootstrap.DEFAULT_REPO_URL)
-    assert err == 'not possible to fast-forward'
+    changed, head, err = bootstrap.git_clone_or_pull(
+        str(dest), bootstrap.DEFAULT_REPO_URL
+    )
+    assert err == 'Could not resolve host: github.com'
     assert changed is False
     assert head == 'abc123def456'
+    assert (dest / '.git').is_dir()

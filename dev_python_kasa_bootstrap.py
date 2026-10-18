@@ -183,10 +183,25 @@ def _checkout_branch(repo_dir, branch):
     return err
 
 
-def git_clone_or_pull(dest, repo_url, branch=None):
+def _pull_diverged(err):
+    """True when ``git pull --ff-only`` refused because histories diverged."""
+    text = (err or '').lower()
+    return (
+        'not possible to fast-forward' in text
+        or 'diverging branches' in text
+        or 'non-fast-forward' in text
+    )
+
+
+def git_clone_or_pull(dest, repo_url, branch=None, *, _replaced=False):
     """Clone or update repo_url at branch into dest.
 
     Returns (changed, head, error).
+
+    The nested tree is a disposable checkout of the configured branch. When
+    ``git pull --ff-only`` cannot fast-forward (shallow history, or the remote
+    branch was rewritten), delete it once and clone again. Other git errors
+    leave the existing tree in place.
     """
     repo_url = default_repo_url(repo_url)
     branch = default_branch(branch)
@@ -225,6 +240,21 @@ def git_clone_or_pull(dest, repo_url, branch=None):
 
     _, err = _run_git(['pull', '--ff-only'], cwd=dest)
     if err:
+        if not _replaced and _pull_diverged(err):
+            LOGGER.warning(
+                'nested python-kasa at %s diverged from %s (%s); '
+                'replacing checkout',
+                dest,
+                repo_url,
+                branch,
+            )
+            try:
+                shutil.rmtree(dest)
+            except OSError as ex:
+                return False, before, f'{err}; failed to replace checkout: {ex}'
+            return git_clone_or_pull(
+                dest, repo_url, branch=branch, _replaced=True
+            )
         return False, before, err
     after, err = git_head(dest)
     if err:

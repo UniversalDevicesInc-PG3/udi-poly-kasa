@@ -73,7 +73,7 @@ Advanced override parameters (usually leave defaults):
 - **`dev_python_kasa_repo`** — git URL (default `https://github.com/jimboca/python-kasa.git`).
 - **`dev_python_kasa_branch`** — git branch (default `tpap-gmpy2-mpz-fix` for TPAP plugs such as KP125M). Use **`H500Hub`** only when you need Tapo H500 hub/camera library fixes that are not on the TPAP branch yet; see **CONFIG.md**.
 
-Changing these restarts the Node Server automatically (including when you change **`dev_python_kasa_branch`**); while enabled, each start checks out the branch and runs `git pull --ff-only` before kasa loads. See **CONFIG.md**.
+Changing these restarts the Node Server automatically (including when you change **`dev_python_kasa_branch`**); while enabled, each start checks out the branch and runs `git pull --ff-only` before kasa loads. A diverged checkout is deleted and cloned again. See **CONFIG.md**.
 
 ## Kasa Devices
 

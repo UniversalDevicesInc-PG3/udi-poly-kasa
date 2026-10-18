@@ -43,7 +43,7 @@ If some supported devices are not being discovered, you can try to increase this
 
 When `true`, the Node Server uses a nested `python-kasa` git clone (and `kasa` symlink) instead of only the pip package. **Default is `true` as of 3.3.31** so TPAP devices (for example **KP125M**) work via branch `tpap-gmpy2-mpz-fix`. `install.sh` clones that tree on install/upgrade.
 
-Changing this parameter, the repo URL, or the branch triggers an automatic Node Server restart. On each restart while enabled, the plugin checks out the configured branch and runs `git pull --ff-only` before importing kasa.
+Changing this parameter, the repo URL, or the branch triggers an automatic Node Server restart. On each restart while enabled, the plugin checks out the configured branch and runs `git pull --ff-only` before importing kasa. If that update cannot fast-forward because the local checkout and the remote branch diverged, the plugin deletes the nested clone and checks the branch out again. A network or authentication failure leaves the existing checkout in place.
 
 Requires `git` on the PG3 host (typically `/usr/local/bin/git` on FreeBSD) and write access to the plugin directory. The Node Server process often has a minimal `PATH`; the plugin resolves common git locations automatically.
 
