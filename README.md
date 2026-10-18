@@ -105,7 +105,7 @@ IoX cannot display video streams. To view RTSP locally, use the Tapo app's **Cam
 
 #### Hub-deferred cameras
 
-On Tapo H500 (and similar hubs), the local hub API often reports paired cameras (`child_num > 0`) but returns an **empty** `getChildDeviceList`. The plugin still creates hub-child camera nodes from the **Tapo cloud roster** and/or LAN Discover, but marks them **hub-deferred**: control and status go over the camera’s own Wi‑Fi IP (`camera_host`), not through hub `controlChild`.
+On Tapo H500 (and similar hubs), the local hub API often reports paired cameras (`child_num > 0`) but returns an **empty** `getChildDeviceList`. The plugin still creates hub-child camera nodes from the **Tapo cloud roster** and/or LAN Discover, but marks them **hub-deferred**: control and status go over the camera’s own Wi‑Fi IP (`camera_host`), not through hub `controlChild`. The cloud roster is loaded at startup and when you run **Discover**. It reuses one TP-Link login (the node server id) so long-poll Discover does not send a new-login or authorization notification to the Tapo/Kasa app.
 
 **How to tell a camera is hub-deferred**
 
@@ -134,7 +134,7 @@ When Discover sees a known hub camera awake, the plugin saves `camera_host`, set
 1. Wake the camera in the Tapo app (live view) so it joins Wi‑Fi.
 2. Prefer: press **Query** on that camera (or the hub), or wait one short-poll cycle / run **Discover**, and confirm **Connected** becomes true.
 3. If solar models never show up on Discover (common for C675D): add the camera’s IP under **Kasa devices** while awake, then restart or **Discover**.
-4. Confirm **user** / **password** are the TP-Link cloud account (same as the Tapo app), not a Camera Account / RTSP login.
+4. Confirm **user** / **password** are the TP-Link cloud account (same as the Tapo app), not a Camera Account / RTSP login. Saving a corrected password retries cloud login and device authentication immediately.
 5. Do not expect hub LAN `controlChild` to wake or control these models on current H500 firmware — the plugin uses direct LAN once the IP is known.
 
 **Commands (privacy, notifications, 24/7 Capture)** need a reachable camera (live hub child or known LAN IP). Sleeping hub-deferred cams with no `camera_host` cannot change those settings until an IP is learned.

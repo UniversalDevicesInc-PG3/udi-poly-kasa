@@ -74,7 +74,7 @@ from camera_helpers import (
     motion_detection_enabled,
     normalize_mac_for_match,
 )
-from tapo_cloud import fetch_cloud_camera_roster
+from tapo_cloud import CloudTokenError, fetch_cloud_camera_roster
 
 #logging.getLogger('pyHS100').setLevel(logging.DEBUG)
 
@@ -123,9 +123,15 @@ class Controller(Node):
         self._discover_batch_has_hub = False
         self._deferred_hub_cameras = []
         # Tapo cloud roster refresh (wap.tplinkcloud.com getDeviceList).
+        # Token stays in memory. terminalUUID is the PG3 node server id.
         self._cloud_roster_last_fetch = 0.0
         self._cloud_roster_refresh_secs = 300.0
         self._cloud_roster_task = None
+        self._cloud_roster_token = None
+        self._cloud_login_backoff_until = 0.0
+        self._cloud_login_backoff_secs = self._CLOUD_LOGIN_BACKOFF_START
+        self._cloud_login_notice_posted = False
+        self._cloud_cred_key = None
         # Tapo aliases learned from hub child lists / discover snapshots.
         self._camera_alias_cache = {}
         self._logged_hub_managed_camera_skip = set()
@@ -205,7 +211,7 @@ class Controller(Node):
         self.poly.subscribe(self.poly.CONFIGDONE,             self.handler_config_done)
         self.poly.subscribe(self.poly.CUSTOMPARAMS,           self.handler_params)
         self.poly.subscribe(self.poly.CUSTOMDATA,             self.handler_data)
-        self.poly.subscribe(self.poly.DISCOVER,               self.discover_new)
+        self.poly.subscribe(self.poly.DISCOVER,               self._cmd_discover_event)
         self.poly.subscribe(self.poly.ADDNODEDONE,            self.handler_add_node_done)
         self.poly.subscribe(poly.CUSTOMTYPEDPARAMS,           self.handler_typed_params)
         self.poly.subscribe(poly.CUSTOMTYPEDDATA,             self.handler_typed_data)
@@ -3388,11 +3394,205 @@ class Controller(Node):
         if snapshots:
             self._buffer_camera_snapshots_for_adoption(snapshots, source='cloud')
 
+    _CLOUD_LOGIN_BACKOFF_START = 3600.0
+    _CLOUD_LOGIN_BACKOFF_MAX = 12 * 3600.0
+    _CLOUD_LOGIN_NOTICE_KEY = 'tapo_cloud_login'
+
+    def _tapo_cloud_terminal_uuid(self):
+        """Stable TP-Link client id: the PG3 node server uuid for this IoX."""
+        uid = str(getattr(self.poly, 'uuid', None) or '').strip()
+        if not uid:
+            raise ValueError('PG3 node server uuid is not available')
+        return uid
+
+    def _cloud_login_blocked(self, now=None):
+        """True while a failed cloud login must not be retried."""
+        if getattr(self, '_cloud_roster_token', None):
+            return False
+        if now is None:
+            now = time.monotonic()
+        return now < getattr(self, '_cloud_login_backoff_until', 0.0)
+
+    def _post_cloud_login_notice(self):
+        """One notice for a rejected cloud login. Further failures stay quiet."""
+        if getattr(self, '_cloud_login_notice_posted', False):
+            return
+        self._cloud_login_notice_posted = True
+        self.poly.Notices[self._CLOUD_LOGIN_NOTICE_KEY] = (
+            'TP-Link cloud login failed. The plugin will not try again for at '
+            'least an hour, so the Tapo/Kasa app is not asked to authorize a '
+            'new login on every poll. Check the TP-Link email and password in '
+            'Custom Parameters.'
+        )
+
+    def _clear_cloud_login_notice(self):
+        self._cloud_login_notice_posted = False
+        try:
+            self.poly.Notices.delete(self._CLOUD_LOGIN_NOTICE_KEY)
+        except Exception:
+            LOGGER.debug('clear tapo cloud login notice failed', exc_info=True)
+
+    def _reset_cloud_login_backoff(self):
+        """Drop a saved token and the failure wait after credentials change."""
+        self._cloud_roster_token = None
+        self._cloud_login_backoff_until = 0.0
+        self._cloud_login_backoff_secs = self._CLOUD_LOGIN_BACKOFF_START
+        self._cloud_roster_last_fetch = 0.0
+        self._clear_cloud_login_notice()
+
+    def _note_cloud_login_failure(self, ex):
+        secs = float(
+            getattr(self, '_cloud_login_backoff_secs', self._CLOUD_LOGIN_BACKOFF_START)
+            or self._CLOUD_LOGIN_BACKOFF_START
+        )
+        self._cloud_roster_token = None
+        self._cloud_login_backoff_until = time.monotonic() + secs
+        self._cloud_login_backoff_secs = min(secs * 2, self._CLOUD_LOGIN_BACKOFF_MAX)
+        self._cloud_roster_last_fetch = time.monotonic()
+        LOGGER.error(
+            'Tapo cloud login failed; next try in %ss: %s',
+            int(secs),
+            ex,
+        )
+        self._post_cloud_login_notice()
+
+    def _note_cloud_login_success(self, token):
+        self._cloud_roster_token = token
+        self._cloud_login_backoff_until = 0.0
+        self._cloud_login_backoff_secs = self._CLOUD_LOGIN_BACKOFF_START
+        self._clear_cloud_login_notice()
+
+    def _remember_cloud_credentials(self, user, password):
+        """Retry cloud and device auth when the saved TP-Link account changes."""
+        key = (str(user or ''), str(password or ''))
+        prior = getattr(self, '_cloud_cred_key', None)
+        self._cloud_cred_key = key
+        if prior is not None and prior != key:
+            LOGGER.info(
+                'TP-Link credentials changed; retrying cloud login and device authentication'
+            )
+            self._reset_cloud_login_backoff()
+            self._schedule_auth_retry()
+
+    def _clear_auth_backoff(self):
+        """Let the next connect use the new password instead of a failure wait."""
+        counts = getattr(self, '_auth_fail_count', None)
+        if isinstance(counts, dict):
+            counts.clear()
+        for state in getattr(self, '_host_state', {}).values():
+            if not isinstance(state, dict):
+                continue
+            state['fail'] = 0
+            state['next_try'] = 0.0
+            state['next_probe'] = 0.0
+            state['protocol_fail'] = False
+
+    def _schedule_auth_retry(self):
+        """Reconnect devices and log into TP-Link cloud once after a password save."""
+        self._clear_auth_backoff()
+
+        async def _run():
+            self._cloud_roster_task = asyncio.current_task()
+            try:
+                await self._refresh_tapo_cloud_roster_a(force=True)
+            except Exception:
+                LOGGER.error(
+                    'Tapo cloud login retry after credential change failed',
+                    exc_info=True,
+                )
+            try:
+                await self._reauth_nodes_a()
+            except Exception:
+                LOGGER.error(
+                    'Device reauth after credential change failed',
+                    exc_info=True,
+                )
+
+        mainloop = getattr(self, 'mainloop', None)
+        try:
+            running = asyncio.get_running_loop()
+        except RuntimeError:
+            running = None
+        if mainloop is not None and running is mainloop:
+            asyncio.create_task(_run())
+        elif mainloop is not None:
+            asyncio.run_coroutine_threadsafe(_run(), mainloop)
+        else:
+            LOGGER.warning(
+                'TP-Link credential change will retry on the next poll; asyncio loop is not running'
+            )
+
+    async def _reauth_nodes_a(self):
+        """Drop live sessions so the next connect uses the saved password.
+
+        Child devices share the parent protocol. Only the parent session is
+        closed. Children are unbound and reconnect with the parent.
+        """
+        nodes = []
+        try:
+            addresses = list(self.poly.getNodes() or [])
+        except Exception:
+            LOGGER.debug('reauth node list failed', exc_info=True)
+            return
+        for addr in addresses:
+            node = self.poly.getNode(addr)
+            if node is None or node is self:
+                continue
+            nodes.append(node)
+        closed = set()
+        for node in nodes:
+            dev = getattr(node, 'dev', None)
+            if dev is None or getattr(dev, 'parent', None) is not None:
+                if dev is not None:
+                    node.dev = None
+                continue
+            if id(dev) in closed:
+                node.dev = None
+                continue
+            closed.add(id(dev))
+            await self._close_device_quietly(dev)
+            node.dev = None
+            if hasattr(node, 'set_connected'):
+                node.set_connected(False)
+        for node in nodes:
+            if getattr(node, 'dev', None) is not None:
+                continue
+            connect = getattr(node, 'connect_a', None)
+            if connect is None:
+                continue
+            try:
+                await connect()
+            except Exception:
+                LOGGER.warning(
+                    'Reauth connect failed for %s',
+                    getattr(node, 'name', getattr(node, 'address', node)),
+                    exc_info=True,
+                )
+            if getattr(node, 'hub_child', False) and getattr(node, 'dev', None) is None:
+                update = getattr(node, 'update_a', None)
+                if update is None:
+                    continue
+                try:
+                    await update()
+                except Exception:
+                    LOGGER.warning(
+                        'Reauth update failed for %s',
+                        getattr(node, 'name', getattr(node, 'address', node)),
+                        exc_info=True,
+                    )
+
     def _schedule_tapo_cloud_roster_refresh(self, force=False):
-        """Refresh Tapo cloud camera roster when a hub is present."""
+        """Refresh Tapo cloud camera roster when a hub is present.
+
+        ``force`` refreshes the roster now. It still reuses a saved token and
+        does not log in while a failed login is in backoff.
+        """
         if not self._tapo_hub_known() or not self._credentials_configured():
             return
         now = time.monotonic()
+        if self._cloud_login_blocked(now):
+            LOGGER.debug('Tapo cloud login in backoff; skipping roster refresh')
+            return
         if not force and (
             now - self._cloud_roster_last_fetch
         ) < self._cloud_roster_refresh_secs:
@@ -3424,6 +3624,9 @@ class Controller(Node):
         if not self._credentials_configured() or not self._tapo_hub_known():
             return False
         now = time.monotonic()
+        if self._cloud_login_blocked(now):
+            LOGGER.debug('Tapo cloud login in backoff; skipping roster refresh')
+            return False
         if not force and (
             now - self._cloud_roster_last_fetch
         ) < self._cloud_roster_refresh_secs:
@@ -3433,15 +3636,40 @@ class Controller(Node):
         insecure = str(
             self.Parameters.get('tapo_cloud_insecure_tls') or ''
         ).strip().lower() in ('1', 'true', 'yes', 'on')
+        had_token = bool(getattr(self, '_cloud_roster_token', None))
+        try:
+            terminal_uuid = self._tapo_cloud_terminal_uuid()
+        except ValueError as ex:
+            LOGGER.error('Tapo cloud roster skipped: %s', ex)
+            self._cloud_roster_last_fetch = time.monotonic()
+            return False
+        token = getattr(self, '_cloud_roster_token', None)
         loop = asyncio.get_running_loop()
-        cloud_cameras = await loop.run_in_executor(
-            None,
-            lambda: fetch_cloud_camera_roster(
-                user,
-                password,
-                insecure_tls=insecure,
-            ),
-        )
+        try:
+            cloud_cameras, new_token = await loop.run_in_executor(
+                None,
+                lambda: fetch_cloud_camera_roster(
+                    user,
+                    password,
+                    terminal_uuid=terminal_uuid,
+                    token=token,
+                    insecure_tls=insecure,
+                ),
+            )
+        except Exception as ex:
+            # A missing token, or a rejected token, means this attempt logged in.
+            login_attempt = (
+                (not had_token)
+                or isinstance(ex, CloudTokenError)
+                or 'login failed' in str(ex).lower()
+            )
+            if login_attempt:
+                self._note_cloud_login_failure(ex)
+            else:
+                self._cloud_roster_last_fetch = time.monotonic()
+                LOGGER.error('Tapo cloud roster refresh failed: %s', ex)
+            return False
+        self._note_cloud_login_success(new_token)
         self._cloud_roster_last_fetch = time.monotonic()
         LOGGER.info(
             'Tapo cloud roster: %s camera(s) (H500 LAN child list may still be empty)',
@@ -4025,7 +4253,13 @@ class Controller(Node):
         LOGGER.debug(f'exit: dev={dev}')
         return dev
 
-    def discover_new(self):
+    def discover_new(self, refresh_cloud=False):
+        """Discover devices.
+
+        Long poll passes ``refresh_cloud=False`` so auto-discover does not
+        log into TP-Link. Manual Discover sets ``refresh_cloud=True`` and
+        still reuses a saved cloud token.
+        """
         LOGGER.info('enter')
         if not self.ready:
             LOGGER.error("Node is not yet ready")
@@ -4050,7 +4284,8 @@ class Controller(Node):
                     res = None
                 LOGGER.debug(f'result={res}')
             self.drain_pending_device_adds()
-            self._schedule_tapo_cloud_roster_refresh(force=True)
+            if refresh_cloud:
+                self._schedule_tapo_cloud_roster_refresh(force=True)
             self._try_adopt_deferred_hub_cameras()
             self._after_inventory_sync()
         finally:
@@ -5211,6 +5446,10 @@ class Controller(Node):
                 str(self.Parameters['user']),
                 str(self.Parameters['password']),
             )
+        self._remember_cloud_credentials(
+            self.Parameters.get('user'),
+            self.Parameters.get('password'),
+        )
         self._sync_dev_python_kasa()
         #self.check_params()
         self.handler_params_st = True
@@ -5651,8 +5890,12 @@ class Controller(Node):
     def _cmd_update_profile(self,command):
         self.update_profile()
 
+    def _cmd_discover_event(self):
+        """PG3 Discover: refresh the cloud roster with the saved token."""
+        self.discover_new(refresh_cloud=True)
+
     def _cmd_discover(self,cmd):
-        self.discover_new()
+        self.discover_new(refresh_cloud=True)
 
     id = 'KasaController'
     commands = {

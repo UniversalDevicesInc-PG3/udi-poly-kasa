@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.3.34] - 2026-10-18
+
+### Fixed
+
+- **TP-Link cloud login spam:** the hub camera roster no longer logs into
+  TP-Link on every long-poll Discover. The plugin reuses the cloud token and
+  sends the node server id as the client id. A failed login waits at least an
+  hour and posts one notice, so the Tapo/Kasa app is not asked to authorize a
+  new login on every poll. Saving a new **user** or **password** retries that
+  login and device authentication immediately.
+
 ## [3.3.33] - 2026-08-15
 
 ### Added

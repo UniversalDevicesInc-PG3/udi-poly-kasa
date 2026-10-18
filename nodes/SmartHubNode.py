@@ -81,7 +81,7 @@ class SmartHubNode(SmartDeviceNode):
                 await self.update_a()
                 if self.dev is not None:
                     self.controller._remember_hub_child_aliases(self.dev)
-                self.controller._schedule_tapo_cloud_roster_refresh(force=True)
+                self.controller._schedule_tapo_cloud_roster_refresh()
                 self.add_children()
                 self.controller._try_adopt_deferred_hub_cameras()
                 self.controller._upgrade_generic_camera_cfg_names()
