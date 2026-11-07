@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.3.37] - 2026-11-07
+
+### Fixed
+
+- **Query** no longer waits on the bulb before answering IoX. The plugin
+  tells PG3 it supports command results, then refreshes **State** in the
+  background. Admin Console was showing `TCP client read response failed`
+  because the result was never sent, or was sent only after a device
+  timeout.
+- A device authentication failure is written to the log and the Polyglot
+  notice once. Later polls keep counting **Auth Fail Count** and leave the
+  log alone until login succeeds or the TP-Link account changes.
+
 ## [3.3.36] - 2026-11-07
 
 ### Fixed

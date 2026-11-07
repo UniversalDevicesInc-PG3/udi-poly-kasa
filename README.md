@@ -207,7 +207,7 @@ The plugin sets **Error** from the device IP/host. All IoX nodes that share that
 **Related signals**
 
 - **Auth Fail Count** (GV1): consecutive authentication failures for this host; resets to 0 when auth succeeds. Use for trending; **Error** is the categorical fault state.
-- **Polyglot Notices**: human-readable text for the same events (auth failures include the consecutive count). Notices clear on success; **Error** returns to OK at the same time.
+- **Polyglot Notices**: human-readable text for the same events. An authentication failure is posted once per device until login succeeds or the TP-Link account changes. **Auth Fail Count** keeps incrementing. Notices clear on success; **Error** returns to OK at the same time.
 - **Connected** (GV0): whether the node is considered online in IoX; can be false while **Error** is OK (for example user disabled polling). Sleeping hub-deferred / battery cameras should show **Error** = **Not ready**, not **OK**.
 
 **ISY programs** — compare the **Error** status numeric value (0 = healthy). Example condition: Error is not 0, or Error is 1 for auth problems only. Indices are stable; see `device_errors.py` and `tests/test_device_errors.py` in the plugin repo.
@@ -223,7 +223,8 @@ Read-only counter of consecutive authentication failures for the device host. Re
 The commands for these nodes
 
 #### Query
-  * Refresh this device’s status. On a **hub-deferred** camera (or the **hub**),
+  * Refresh this device’s status. IoX gets the Query result immediately; **State**
+    updates when the device responds. On a **hub-deferred** camera (or the **hub**),
     also forces a LAN rediscover for deferred cams missing a LAN IP — useful
     right after waking the camera in the Tapo app (see **Hub-deferred cameras**).
 #### On, Off

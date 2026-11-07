@@ -252,13 +252,13 @@ class SmartStripNode(SmartDeviceNode):
         for node in self.child_nodes:
             if not node.is_on():
                 node.q_set_on()
-        self.set_on()
+        self._schedule(self.set_on_a())
 
     def cmd_set_off(self,command):
         for node in self.child_nodes:
             if node.is_on():
                 node.q_set_off()
-        self.set_off()
+        self._schedule(self.set_off_a())
 
     # TODO: Querying the child nodes calls update on myself each time, really don't need that.
     def cmd_query_all(self,command):

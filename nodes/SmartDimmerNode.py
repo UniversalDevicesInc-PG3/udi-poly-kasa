@@ -81,17 +81,29 @@ class SmartDimmerNode(SmartDeviceNode):
             return False
         return super()._accepts_don_level()
 
+    async def _set_bri_a(self, val):
+        if not self.is_connected():
+            return
+        self.brightness = int(val)
+        self.setDriver('GV5', self.brightness)
+        await self.dev.set_brightness(int(bri2st(self.brightness)))
+        await self.dev.update()
+        self.setDriver('ST', self.dev.brightness)
+
+    async def _don_level_a(self, level):
+        if level == 0:
+            await self.set_off_a()
+            return
+        await self.dev.turn_on()
+        await self._set_bri_a(level)
+
     def cmd_set_on(self,command):
         level = don_level_to_bri(command)
         if level is None or not self._accepts_don_level():
             super().cmd_set_on(command)
             return
-        if level == 0:
-            self.cmd_set_off(command)
-            return
         LOGGER.info(f'{self.pfx} DON level={level}')
-        asyncio.run(self.dev.turn_on())
-        self.set_bri(level)
+        self._schedule(self._don_level_a(level))
 
     def cmd_set_off(self,command):
         super().cmd_set_off(command)
@@ -101,19 +113,29 @@ class SmartDimmerNode(SmartDeviceNode):
             return False
         val = int(command.get('value'))
         LOGGER.info(f'{self.pfx} val={val}')
-        asyncio.run(self.dev.turn_on())
-        self.set_bri(val)
+        self._schedule(self._don_level_a(val))
 
     def cmd_brt(self,command):
         if not self._cmd_requires_dimmable('BRT'):
             return False
-        asyncio.run(self.dev.turn_on())
-        self.brt()
+        self._schedule(self._nudge_bri_a(7))
 
     def cmd_dim(self,command):
         if not self._cmd_requires_dimmable('DIM'):
             return False
-        self.dim()
+        self._schedule(self._nudge_bri_a(-7))
+
+    async def _nudge_bri_a(self, delta):
+        if delta > 0:
+            await self.dev.turn_on()
+        await self.dev.update()
+        level = st2bri(self.dev.brightness)
+        if delta > 0:
+            if not self.is_connected() or level > 100:
+                return
+        elif not self.is_connected() or level <= 0:
+            return
+        await self._set_bri_a(level + delta)
 
     def cmd_set_mon(self,command):
         super().cmd_set_mon(command)

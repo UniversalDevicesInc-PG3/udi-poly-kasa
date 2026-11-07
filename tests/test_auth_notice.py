@@ -3,11 +3,14 @@
 from __future__ import annotations
 
 import asyncio
+import importlib
 from unittest.mock import MagicMock
 
 from conftest import make_controller_stub
 from kasa.exceptions import AuthenticationError
 from nodes.Controller import Controller
+
+_controller_mod = importlib.import_module('nodes.Controller')
 
 
 class _AuthDev:
@@ -70,21 +73,31 @@ def test_auth_failure_notice_includes_consecutive_count():
     )
 
 
-def test_auth_fail_count_increments_and_resets_on_success():
+def test_auth_fail_count_increments_and_resets_on_success(monkeypatch):
     ctrl = _controller_with_notices()
     dev = _AuthDev(fail_times=2)
     key = ctrl._notice_key_for_device(dev)
+    errors = []
+    monkeypatch.setattr(
+        _controller_mod.LOGGER,
+        'error',
+        lambda *args, **kwargs: errors.append(args[0] if args else ''),
+    )
 
-    asyncio.get_event_loop().run_until_complete(ctrl.update_dev(dev))
+    loop = asyncio.get_event_loop()
+    loop.run_until_complete(ctrl.update_dev(dev))
     assert ctrl._auth_fail_count['192.168.1.50'] == 1
     assert '1 consecutive auth failure' in ctrl.poly.Notices[key]
+    notice = ctrl.poly.Notices[key]
 
-    asyncio.get_event_loop().run_until_complete(ctrl.update_dev(dev))
+    loop.run_until_complete(ctrl.update_dev(dev))
     assert ctrl._auth_fail_count['192.168.1.50'] == 2
-    assert '2 consecutive auth failures' in ctrl.poly.Notices[key]
+    assert ctrl.poly.Notices[key] == notice
+    assert len(errors) == 1
 
-    asyncio.get_event_loop().run_until_complete(ctrl.update_dev(dev))
+    loop.run_until_complete(ctrl.update_dev(dev))
     assert '192.168.1.50' not in ctrl._auth_fail_count
+    assert '192.168.1.50' not in ctrl._auth_reported
     assert key not in ctrl.poly.Notices
 
 

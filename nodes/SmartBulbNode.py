@@ -224,109 +224,88 @@ class SmartBulbNode(SmartDeviceNode):
 
     def cmd_set_on(self, command):
         # Alexa / portal "set to N%" is DON with a percent. Bare DON stays On.
+        # Schedule the device call. Waiting here holds IoX's query/command ack.
         level = don_level_to_bri(command)
         if level is None or not self._accepts_don_level():
-            self.set_on()
+            self._schedule(self.set_on_a())
             return
         if level == 0:
-            self.set_off()
+            self._schedule(self.set_off_a())
             return
         LOGGER.info(f'{self.pfx} DON level={level}')
-        fut = asyncio.run_coroutine_threadsafe(
-            self.set_bri_a(level), self.controller.mainloop
-        )
-        return self._future_result(fut)
+        self._schedule(self.set_bri_a(level))
 
     def cmd_set_off(self, command):
-        self.set_off()
+        self._schedule(self.set_off_a())
 
     def cmd_set_bri(self,command):
         if not self._cmd_requires_dimmable('SET_BRI'):
             return False
         val = int(command.get('value'))
         LOGGER.info(f'{self.pfx} val={val}')
-        fut = asyncio.run_coroutine_threadsafe(self.set_bri_a(val), self.controller.mainloop)
-        return self._future_result(fut)
+        self._schedule(self.set_bri_a(val))
 
     def cmd_brt(self,command):
         if not self._cmd_requires_dimmable('BRT'):
             return False
         LOGGER.debug(f'{self.pfx} connected={self.connected}')
-        fut = asyncio.run_coroutine_threadsafe(self.brt_a(), self.controller.mainloop)
-        return self._future_result(fut)
+        self._schedule(self.brt_a())
 
     def cmd_dim(self,command):
         if not self._cmd_requires_dimmable('DIM'):
             return False
         LOGGER.debug(f'{self.pfx} connected={self.connected}')
-        fut = asyncio.run_coroutine_threadsafe(self.dim_a(), self.controller.mainloop)
-        return self._future_result(fut)
+        self._schedule(self.dim_a())
 
     def cmd_set_sat(self,command):
         val = int(command.get('value'))
         LOGGER.info(f'{self.pfx} val={val}')
-        fut = asyncio.run_coroutine_threadsafe(self.set_sat_a(val), self.controller.mainloop)
-        return self._future_result(fut)
+        self._schedule(self.set_sat_a(val))
 
     def cmd_set_hue(self,command):
         val = int(command.get('value'))
         LOGGER.info(f'{self.pfx} val={val}')
-        fut = asyncio.run_coroutine_threadsafe(self.set_hue_a(val), self.controller.mainloop)
-        return self._future_result(fut)
+        self._schedule(self.set_hue_a(val))
 
     def cmd_set_color_temp(self,command):
         val = int(command.get('value'))
         LOGGER.info(f'val={val}')
-        fut = asyncio.run_coroutine_threadsafe(self.set_color_temp_a(val), self.controller.mainloop)
-        return self._future_result(fut)
+        self._schedule(self.set_color_temp_a(val))
 
     def cmd_set_color_name(self,command):
         val = int(command.get('value'))
         LOGGER.info(f'val={val}')
-        fut = asyncio.run_coroutine_threadsafe(self.set_color_name_a(val), self.controller.mainloop)
-        return self._future_result(fut)
+        self._schedule(self.set_color_name_a(val))
 
     def cmd_set_color_temp_brightness(self, command):
         query = command.get('query')
         LOGGER.info(f'query={query}')
-        fut = asyncio.run_coroutine_threadsafe(
-            self.set_color_temp_brightness_a(
-                int(query.get('K.uom26')),
-                int(query.get('BR.uom100')),
-                int(query.get('D.uom42'))
-            ), 
-            self.controller.mainloop
-        )
-        return self._future_result(fut)
+        self._schedule(self.set_color_temp_brightness_a(
+            int(query.get('K.uom26')),
+            int(query.get('BR.uom100')),
+            int(query.get('D.uom42'))
+        ))
 
     def cmd_set_color_rgb(self, command):
         query = command.get('query')
         LOGGER.info(f'query={query}')
-        fut = asyncio.run_coroutine_threadsafe(
-            self.set_color_rgb_a(
-                int(query.get('R.uom100')),
-                int(query.get('G.uom100')),
-                int(query.get('B.uom100')),
-                int(query.get('BR.uom100')),
-                int(query.get('D.uom42')),
-            ),
-            self.controller.mainloop
-        )
-        return self._future_result(fut)
+        self._schedule(self.set_color_rgb_a(
+            int(query.get('R.uom100')),
+            int(query.get('G.uom100')),
+            int(query.get('B.uom100')),
+            int(query.get('BR.uom100')),
+            int(query.get('D.uom42')),
+        ))
 
     def cmd_set_color_hsv(self, command):
         query = command.get('query')
         LOGGER.info(f'query={query}')
-        fut = asyncio.run_coroutine_threadsafe(
-            self.set_color_hsv_a(
-                int(query.get('H.uom100')),
-                int(query.get('S.uom100')),
-                int(query.get('BR.uom100')),
-                int(query.get('D.uom42')),
-            ),
-            self.controller.mainloop
-        )
-        return self._future_result(fut)
+        self._schedule(self.set_color_hsv_a(
+            int(query.get('H.uom100')),
+            int(query.get('S.uom100')),
+            int(query.get('BR.uom100')),
+            int(query.get('D.uom42')),
+        ))
 
     def cmd_set_color_xy(self, command):
         return self._cmd_reject_unsupported(

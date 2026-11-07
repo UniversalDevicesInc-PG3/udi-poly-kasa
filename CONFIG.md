@@ -13,6 +13,10 @@ Long poll does the following
 - For devices that have poll enabled, updates device status
 - If auto_discover is on, runs a discover looking for new devices
 
+### Query
+
+**Query** in the Admin Console returns as soon as the refresh is queued. **State** updates when the device answers. A repeated authentication failure is logged and posted as a Polyglot notice once per device until login succeeds or **user** / **password** changes. **Auth Fail Count** still increments on each failure.
+
 ### Custom Params
 
 #### `user`

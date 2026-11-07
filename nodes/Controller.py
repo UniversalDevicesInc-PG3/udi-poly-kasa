@@ -141,8 +141,10 @@ class Controller(Node):
         # (notice_key, source) -> monotonic timestamp of last write.
         self._notice_last_write = {}
         # host -> consecutive auth failure count; reset on successful update.
-        # First failure logs at ERROR; further failures log at DEBUG.
+        # The error log and Polyglot notice are written once per host until
+        # login succeeds or the TP-Link account changes.
         self._auth_fail_count = {}
+        self._auth_reported = set()
         # Per-host circuit breaker. Hosts that have failed N times in a row
         # stop being probed by per-node connect_a/discover_single calls until
         # their next_try monotonic time. The longPoll discover sweep still
@@ -879,14 +881,22 @@ class Controller(Node):
             ret = True
         except AuthenticationError as msg:
             auth_key = host or 'unknown'
+            reported = getattr(self, '_auth_reported', None)
+            if not isinstance(reported, set):
+                reported = set()
+                self._auth_reported = reported
+            first_report = auth_key not in reported
+            if first_report:
+                reported.add(auth_key)
             if self._dev_hub_deferred_context(dev):
-                LOGGER.warning(
-                    'Direct LAN auth failed for hub-deferred camera %s (%s); '
-                    'camera may be hub-paired or sleeping: %s',
-                    self._device_display_name(dev),
-                    host,
-                    msg,
-                )
+                if first_report:
+                    LOGGER.warning(
+                        'Direct LAN auth failed for hub-deferred camera %s (%s); '
+                        'camera may be hub-paired or sleeping: %s',
+                        self._device_display_name(dev),
+                        host,
+                        msg,
+                    )
                 self.host_record_failure(host)
                 # Reachable enough to reject the handshake — not Host unreachable.
                 err_code = (
@@ -894,28 +904,22 @@ class Controller(Node):
                 )
                 self._set_host_device_err(host, err_code)
                 self.clear_device_notice(dev)
-                log = LOGGER.debug if was_broken else LOGGER.warning
-                log(
-                    'Skipping auth notice for hub-deferred camera %s (%s)',
-                    self._device_display_name(dev),
-                    host,
-                )
             else:
                 fail_count = self._auth_fail_count.get(auth_key, 0) + 1
                 self._auth_fail_count[auth_key] = fail_count
-                notice = self._auth_failure_notice_message(msg, fail_count)
-                self.set_device_notice(dev, notice, source='auth', refresh=True)
                 self._set_host_auth_fail_count(host, fail_count)
                 err_code = ERR_NO_CREDS if not self._credentials_configured() else ERR_AUTH
                 self._set_host_device_err(host, err_code)
-                log = LOGGER.debug if fail_count > 1 else LOGGER.error
-                log(
-                    'Failed to authenticate %s (%s) [%s consecutive]: %s',
-                    self._device_display_name(dev),
-                    host,
-                    fail_count,
-                    msg,
-                )
+                if first_report:
+                    notice = self._auth_failure_notice_message(msg, fail_count)
+                    self.set_device_notice(dev, notice, source='auth')
+                    LOGGER.error(
+                        'Failed to authenticate %s (%s) [%s consecutive]: %s',
+                        self._device_display_name(dev),
+                        host,
+                        fail_count,
+                        msg,
+                    )
         except KasaException as ex:
             # KasaException already encodes the actionable bit (e.g. "Host
             # is down", "Timed out") in its message. The traceback is the
@@ -991,6 +995,9 @@ class Controller(Node):
                     host,
                     prior,
                 )
+            reported = getattr(self, '_auth_reported', None)
+            if host and isinstance(reported, set):
+                reported.discard(host)
             self._set_host_auth_fail_count(host, 0)
             self._set_host_device_err(host, ERR_OK)
             self.clear_device_notice(dev)
@@ -3479,6 +3486,9 @@ class Controller(Node):
         counts = getattr(self, '_auth_fail_count', None)
         if isinstance(counts, dict):
             counts.clear()
+        reported = getattr(self, '_auth_reported', None)
+        if isinstance(reported, set):
+            reported.clear()
         for state in getattr(self, '_host_state', {}).values():
             if not isinstance(state, dict):
                 continue

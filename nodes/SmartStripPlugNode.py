@@ -97,7 +97,7 @@ class SmartStripPlugNode(SmartDeviceNode):
     def cmd_set_on(self,command):
         LOGGER.debug(f'enter: {self.dev}')
         super().cmd_set_on(command)
-        self.primary_node.set_on()
+        self.primary_node._schedule(self.primary_node.set_on_a())
         LOGGER.debug(f'exit: {self.dev}')
 
     def cmd_set_off(self,command):

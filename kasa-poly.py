@@ -20,6 +20,27 @@ from kasa_compat import apply_kasa_patches
 apply_kasa_patches()
 from nodes import VERSION,Controller
 
+
+class _AuthChallengeOnce(logging.Filter):
+    """Allow one KLAP/SSL challenge-failure line per host."""
+
+    def __init__(self):
+        super().__init__()
+        self._seen = set()
+
+    def filter(self, record):
+        try:
+            msg = record.getMessage()
+        except Exception:
+            return True
+        if 'did not match our challenge' not in msg:
+            return True
+        if msg in self._seen:
+            return False
+        self._seen.add(msg)
+        return True
+
+
 def main():
     # Some are getting unclosed socket warnings due to garbage collection?? no idea why, so just ignore them since we dont' care
     warnings.filterwarnings("ignore", category=ResourceWarning, message="unclosed.*<socket.socket.*>")
@@ -28,12 +49,24 @@ def main():
     # per discovery cycle; not actionable per-packet and a major contributor
     # to log volume during incidents.
     logging.getLogger('kasa.discover').setLevel(logging.WARNING)
+    # python-kasa logs "did not match our challenge" at DEBUG on every
+    # handshake. A filter on the parent logger does not see child records,
+    # so attach it to each transport logger. Keep the first line per host.
+    _auth_once = _AuthChallengeOnce()
+    for _logger_name in (
+        'kasa.transports.klaptransport',
+        'kasa.transports.sslaestransport',
+    ):
+        logging.getLogger(_logger_name).addFilter(_auth_once)
     if sys.version_info < (3, 6):
         LOGGER.error("ERROR: Python 3.6 or greater is required not {}.{}".format(sys.version_info[0],sys.version_info[1]))
         sys.exit(1)
     try:
         polyglot = Interface([Controller])
-        polyglot.start(VERSION)
+        # requestId must be true or PG3 waits for a query/command result
+        # this process never sends, and Admin Console shows
+        # "TCP client read response failed".
+        polyglot.start({'version': VERSION, 'requestId': True})
         control = Controller(polyglot, 'tplkasactl', 'tplkasactl', 'Kasa Controller')
         polyglot.runForever()
     except (KeyboardInterrupt, SystemExit):

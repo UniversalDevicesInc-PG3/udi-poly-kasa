@@ -204,13 +204,25 @@ class SmartDeviceNode(Node):
             )
         return res
 
+    def _schedule(self, coro):
+        """Run device I/O on the mainloop without blocking the command thread.
+
+        PG3 does not send IoX the requestId result until this handler returns.
+        Waiting on the bulb here makes Admin Console report
+        "TCP client read response failed".
+        """
+        loop = getattr(getattr(self, 'controller', None), 'mainloop', None)
+        if loop is None:
+            LOGGER.error('%s cannot schedule command; mainloop is not running', getattr(self, 'pfx', ''))
+            close = getattr(coro, 'close', None)
+            if close is not None:
+                close()
+            return
+        asyncio.run_coroutine_threadsafe(coro, loop)
+
     def query(self):
-        LOGGER.info(f'{self.pfx} enter')
-        LOGGER.info(f'{self.pfx} waiting for set_state_a results...')
-        res = self._run_coro(self.set_state_a(), 'query/set_state_a')
-        LOGGER.info(f'{self.pfx} res={res}')
-        self.reportDrivers()
-        LOGGER.info(f'{self.pfx} exit')
+        LOGGER.info(f'{self.pfx} schedule refresh')
+        self._schedule(self._query_a())
 
     async def _query_a(self):
         await self.set_state_a(set_energy=True)
@@ -579,10 +591,10 @@ class SmartDeviceNode(Node):
             return False
 
     def cmd_set_on(self, command):
-        self.set_on()
+        self._schedule(self.set_on_a())
 
     def cmd_set_off(self, command):
-        self.set_off()
+        self._schedule(self.set_off_a())
 
     def cmd_set_mon(self, command):
         val = int(command.get('value'))
