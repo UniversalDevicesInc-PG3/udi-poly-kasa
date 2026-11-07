@@ -568,6 +568,16 @@ class SmartDeviceNode(Node):
             val = self.get_mon()
         self.setDriver('GV6',val)
 
+    def _accepts_don_level(self):
+        """True when this node should apply a DON brightness instead of plain On."""
+        dev = getattr(self, 'dev', None)
+        if dev is None:
+            return False
+        try:
+            return bool(self.is_dimmable(dev))
+        except Exception:
+            return False
+
     def cmd_set_on(self, command):
         self.set_on()
 

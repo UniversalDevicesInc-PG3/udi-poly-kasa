@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.3.36] - 2026-11-07
+
+### Fixed
+
+- Dimmable bulbs and wall dimmers apply a level sent with **On**. Alexa and
+  ISY Portal set brightness with **On** at a percent (`DON/50` is 50% on
+  **State**). A bare **On** still turns the device on. **Set Brightness** is
+  unchanged (1–254).
+
+### Changed
+
+- Dimmable bulb, light-strip, and wall-dimmer node definitions accept an
+  optional percent on **On** (same 0–100 scale as **State**). Profile version
+  is **3.3.36** so IoX reloads that **On** parameter.
+
 ## [3.3.35] - 2026-10-18
 
 ### Fixed

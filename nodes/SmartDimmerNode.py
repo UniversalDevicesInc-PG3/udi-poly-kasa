@@ -7,7 +7,7 @@ from udi_interface import Node,LOGGER
 import asyncio
 from kasa import SmartPlug, SmartDimmer
 from kasa_compat import SmartDeviceException
-from converters import bri2st,st2bri
+from converters import bri2st, st2bri, don_level_to_bri
 from nodes import SmartDeviceNode
 
 class SmartDimmerNode(SmartDeviceNode):
@@ -74,8 +74,24 @@ class SmartDimmerNode(SmartDeviceNode):
     def newdev(self):
         return SmartDimmer(self.host)
 
+    def _accepts_don_level(self):
+        # SmartDimmer_NN is a switch. Only the D node defs take a DON level.
+        node_id = getattr(self, 'id', '') or ''
+        if not (len(node_id) > 12 and node_id[12] == 'D'):
+            return False
+        return super()._accepts_don_level()
+
     def cmd_set_on(self,command):
-        super().cmd_set_on(command)
+        level = don_level_to_bri(command)
+        if level is None or not self._accepts_don_level():
+            super().cmd_set_on(command)
+            return
+        if level == 0:
+            self.cmd_set_off(command)
+            return
+        LOGGER.info(f'{self.pfx} DON level={level}')
+        asyncio.run(self.dev.turn_on())
+        self.set_bri(level)
 
     def cmd_set_off(self,command):
         super().cmd_set_off(command)

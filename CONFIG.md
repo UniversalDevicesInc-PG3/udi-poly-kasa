@@ -113,6 +113,8 @@ The plugin also auto-derives broadcast targets from configured manual device IPs
 
 Non-dimmable plugs, strip parents, and strip outlets report **State** as **On** / **Off** (not `0%` / `100%`). Wall dimmers and bulbs that use brightness on **State** still show a percentage.
 
+On those dimmable bulbs and wall dimmers, **On** accepts an optional percent (0–100), the same scale as **State**. Alexa “set to 50%” uses that **On** level. **Set Brightness** is still 1–254. **On** with no percent turns the device on without a new level.
+
 ### Tapo cameras and hubs
 
 Tapo cameras (`DeviceType.Camera`) and hubs (`DeviceType.Hub`, e.g. H500) are discovered like other Kasa/Tapo devices. Use the same **user** and **password** (TP-Link cloud account) as for plugs and bulbs.

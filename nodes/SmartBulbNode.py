@@ -9,7 +9,7 @@ from concurrent.futures import TimeoutError as FutureTimeoutError
 from kasa import SmartBulb
 from kasa_compat import SmartDeviceException
 from nodes import SmartDeviceNode
-from converters import color_hsv, color_rgb, bri2st, st2bri, rgb2hsv
+from converters import color_hsv, color_rgb, bri2st, st2bri, don_level_to_bri, rgb2hsv
 
 # TODO: Use min/max values to get correct NodeDef
 # SmartDeviceNode:set_state_a: exit:  dev=<DeviceType.Bulb model KL120(US) at 192.168.86.144 (Test KL120), is_on: True - dev specific: {'Brightness': 50, 'Is dimmable': True, 'Color temperature': 2700, 'Valid temperature range': ColorTempRange(min=2700, max=5000)}>
@@ -223,7 +223,19 @@ class SmartBulbNode(SmartDeviceNode):
         await self.set_state_a()
 
     def cmd_set_on(self, command):
-        self.set_on()
+        # Alexa / portal "set to N%" is DON with a percent. Bare DON stays On.
+        level = don_level_to_bri(command)
+        if level is None or not self._accepts_don_level():
+            self.set_on()
+            return
+        if level == 0:
+            self.set_off()
+            return
+        LOGGER.info(f'{self.pfx} DON level={level}')
+        fut = asyncio.run_coroutine_threadsafe(
+            self.set_bri_a(level), self.controller.mainloop
+        )
+        return self._future_result(fut)
 
     def cmd_set_off(self, command):
         self.set_off()

@@ -236,7 +236,9 @@
                 <cmd id="QUERY" />
                 <cmd id="BRT" />
                 <cmd id="DIM" />
-                <cmd id="DON" />
+                <cmd id="DON">
+                    <p id="" editor="HCLST" init="ST" optional="T" />
+                </cmd>
                 <cmd id="DOF" />
                 <cmd id="SET_BRI">
                     <p id="" editor="HCLBRI" init="GV5" />
@@ -270,7 +272,9 @@
                 <cmd id="BRI">
                     <p id="" editor="bri" init="GV5" />
                 </cmd>
-                <cmd id="DON" />
+                <cmd id="DON">
+                    <p id="" editor="HCLST" init="ST" optional="T" />
+                </cmd>
                 <cmd id="DOF" />
                 <cmd id="SET_MON">
                     <p id="" editor="bool" init="GV6" />
@@ -340,7 +344,9 @@
                 <cmd id="BRI">
                     <p id="" editor="bri" init="GV5" />
                 </cmd>
-                <cmd id="DON" />
+                <cmd id="DON">
+                    <p id="" editor="HCLST" init="ST" optional="T" />
+                </cmd>
                 <cmd id="DOF" />
                 <cmd id="SET_MON">
                     <p id="" editor="bool" init="GV6" />
@@ -368,7 +374,9 @@
                 <cmd id="BRI">
                     <p id="" editor="bri" init="GV5" />
                 </cmd>
-                <cmd id="DON" />
+                <cmd id="DON">
+                    <p id="" editor="HCLST" init="ST" optional="T" />
+                </cmd>
                 <cmd id="DOF" />
                 <cmd id="SET_MON">
                     <p id="" editor="bool" init="GV6" />
@@ -397,7 +405,9 @@
                 <cmd id="BRI">
                     <p id="" editor="bri" init="GV5" />
                 </cmd>
-                <cmd id="DON" />
+                <cmd id="DON">
+                    <p id="" editor="HCLST" init="ST" optional="T" />
+                </cmd>
                 <cmd id="DOF" />
                 <cmd id="SET_MON">
                     <p id="" editor="bool" init="GV6" />
@@ -432,7 +442,9 @@
             </sends>
             <accepts>
                 <cmd id="QUERY" />
-                <cmd id="DON" />
+                <cmd id="DON">
+                    <p id="" editor="HCLST" init="ST" optional="T" />
+                </cmd>
                 <cmd id="DOF" />
                 <cmd id="DFON" />
                 <cmd id="DFOF" />
@@ -521,7 +533,9 @@
             </sends>
             <accepts>
                 <cmd id="QUERY" />
-                <cmd id="DON" />
+                <cmd id="DON">
+                    <p id="" editor="HCLST" init="ST" optional="T" />
+                </cmd>
                 <cmd id="DOF" />
                 <cmd id="DFON" />
                 <cmd id="DFOF" />
@@ -605,7 +619,9 @@
             </sends>
             <accepts>
                 <cmd id="QUERY" />
-                <cmd id="DON" />
+                <cmd id="DON">
+                    <p id="" editor="HCLST" init="ST" optional="T" />
+                </cmd>
                 <cmd id="DOF" />
                 <cmd id="DFON" />
                 <cmd id="DFOF" />
@@ -656,7 +672,9 @@
             </sends>
             <accepts>
                 <cmd id="QUERY" />
-                <cmd id="DON" />
+                <cmd id="DON">
+                    <p id="" editor="HCLST" init="ST" optional="T" />
+                </cmd>
                 <cmd id="DOF" />
                 <cmd id="DFON" />
                 <cmd id="DFOF" />
@@ -745,7 +763,9 @@
             </sends>
             <accepts>
                 <cmd id="QUERY" />
-                <cmd id="DON" />
+                <cmd id="DON">
+                    <p id="" editor="HCLST" init="ST" optional="T" />
+                </cmd>
                 <cmd id="DOF" />
                 <cmd id="DFON" />
                 <cmd id="DFOF" />

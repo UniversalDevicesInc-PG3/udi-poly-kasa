@@ -86,6 +86,42 @@ def bri2st(bri):
 def st2bri(st):
     return int(st / 100. * 254)
 
+def don_level_to_bri(command):
+    """Map a DON command to brightness 0-254, or None when DON has no level.
+
+    None means plain On (turn on at the current or last level). 0 means off.
+    Alexa and ISY Portal send a percent (UOM 51, or a bare value 0-100).
+    UOM 100, or a bare value above 100, is the Set Brightness byte scale.
+    """
+    if not isinstance(command, dict) or 'value' not in command:
+        return None
+    raw = command.get('value')
+    if raw is None or (isinstance(raw, str) and raw.strip() == ''):
+        return None
+    try:
+        val = int(float(raw))
+    except (TypeError, ValueError):
+        return None
+    uom = command.get('uom')
+    if uom in (None, ''):
+        uom_n = None
+    else:
+        try:
+            uom_n = int(uom)
+        except (TypeError, ValueError):
+            uom_n = None
+    if uom_n == 100 or (uom_n is None and val > 100):
+        if val < 0:
+            return 0
+        if val > 254:
+            return 254
+        return val
+    if val < 0:
+        val = 0
+    if val > 100:
+        val = 100
+    return st2bri(val)
+
 def kel2mired(value):
     if value != 0:
         return int(round(1e6 / value))

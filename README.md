@@ -228,6 +228,10 @@ The commands for these nodes
     right after waking the camera in the Tapo app (see **Hub-deferred cameras**).
 #### On, Off
   * Turn device on or off
+  * On a dimmable bulb or wall dimmer, **On** also accepts an optional percent
+    from 0 to 100 (same scale as **State**). That is what Alexa sends for
+    “set the light to 50%”. **On** with no percent still turns the device on.
+    **Set Brightness** remains 1–254 for programs and REST.
 
 # Issues
 
